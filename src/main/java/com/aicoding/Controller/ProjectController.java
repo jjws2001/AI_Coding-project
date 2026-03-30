@@ -2,7 +2,6 @@ package com.aicoding.Controller;
 
 import com.aicoding.Entity.DTO.ProjectDTO;
 import com.aicoding.Entity.model.Project;
-import com.aicoding.Entity.model.User;
 import com.aicoding.Service.ProjectService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
