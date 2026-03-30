@@ -1,0 +1,82 @@
+spring:
+  application:
+    name: ai-coding-platform
+
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/ai_coding_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: root
+    password: 1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: ${GITHUB_CLIENT_ID:}
+            client-secret: ${GITHUB_CLIENT_SECRET:}
+            scope:
+              - user:email
+              - repo
+              - read:user
+            redirect-uri: ${GITHUB_REDIRECT_URI:{baseUrl}/login/oauth2/code/{registrationId}}
+        provider:
+          github:
+            authorization-uri: https://github.com/login/oauth/authorize
+            token-uri: https://github.com/login/oauth/access_token
+            user-info-uri: https://api.github.com/user
+
+server:
+  forward-headers-strategy: framework
+
+app:
+  oauth2:
+    redirect-uri: ${APP_OAUTH2_REDIRECT_URI:http://localhost:3000}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://sulr.cc.cd,https://sulr.cc.cd}
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: aicode-projects
+
+workspace:
+  base-path: ${WORKSPACE_BASE_PATH:/var/aicode/workspace}
+  backup-cron: "0 */30 * * * *"
+
+ai:
+  openai:
+    api-key: sk-7bae787fcf5e4ea2880525b9fff30f1d  # sk-ugxtkkqebpyzqynmjeoniceopzzqqsfgecxlpdodhllxamrg
+    model: qwen3-vl-32b-thinking
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1  # https://api.openai.com/v1  or https://api.siliconflow.cn/v1/chat/completions
+  openclaw:
+    endpoint: http://localhost:18789
+  chroma:
+    url: http://localhost:8001
+  llm:
+    max-concurrency: 3
+    request-timeout: 60
+    retry:
+      max-attempts: 3
+      backoff-factor: 2.0
+      initial-delay: 1000ms
+  chat-memory:
+    max-messages: 10
+
+guardrails:
+  enabled: true
+  patterns: ".*api[_-]?key.*,.*password.*,.*secret.*,.*token.*"
