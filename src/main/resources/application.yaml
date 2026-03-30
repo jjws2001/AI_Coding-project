@@ -3,9 +3,9 @@ spring:
     name: ai-coding-platform
 
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/ai_coding_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-    username: root
-    password: 1234
+    url: jdbc:mysql://127.0.0.1:3306/{your-db-name}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: {your-username}
+    password: {your-password}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -60,9 +60,9 @@ workspace:
 
 ai:
   openai:
-    api-key: sk-7bae787fcf5e4ea2880525b9fff30f1d  # sk-ugxtkkqebpyzqynmjeoniceopzzqqsfgecxlpdodhllxamrg
-    model: qwen3-vl-32b-thinking
-    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1  # https://api.openai.com/v1  or https://api.siliconflow.cn/v1/chat/completions
+    api-key: {your-apikey}
+    model: {select-your-model-which-is-suported-openai}
+    base-url: {your-model-base-url}
   openclaw:
     endpoint: http://localhost:18789
   chroma:
