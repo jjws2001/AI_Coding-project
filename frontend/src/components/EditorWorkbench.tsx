@@ -112,26 +112,50 @@ export function EditorWorkbench({
         return;
       }
 
-      if (!openFiles.includes(normalizedPath)) {
-        setOpenFiles((prev) => [...prev, normalizedPath]);
-      }
+      setOpenFiles((prev) =>
+        prev.includes(normalizedPath) ? prev : [...prev, normalizedPath]
+      );
       setActiveFile(normalizedPath);
 
       if (fileContents[normalizedPath] !== undefined) {
         return;
       }
 
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
       try {
         setStatusMessage(`Loading ${normalizedPath} ...`);
-        const content = await getFileContent(projectId, normalizedPath);
+        const content = await getFileContent(projectId, normalizedPath, controller.signal);
         setFileContents((prev) => ({ ...prev, [normalizedPath]: content }));
         setStatusMessage(`Opened ${normalizedPath}`);
       } catch (error) {
-        setStatusMessage(`Failed to load file: ${String(error)}`);
+        const message =
+          controller.signal.aborted && error instanceof Error
+            ? `Loading timed out: ${normalizedPath}`
+            : `Failed to load file: ${String(error)}`;
+        setStatusMessage(message);
+      } finally {
+        window.clearTimeout(timeoutId);
       }
     },
-    [fileContents, openFiles, projectId]
+    [fileContents, projectId]
   );
+
+  const closeFile = useCallback((path: string) => {
+    setOpenFiles((prev) => prev.filter((item) => item !== path));
+    setFileContents((prev) => {
+      const next = { ...prev };
+      delete next[path];
+      return next;
+    });
+    setDirtySet((prev) => {
+      const next = new Set(prev);
+      next.delete(path);
+      return next;
+    });
+    setActiveFile((prev) => (prev === path ? null : prev));
+    setStatusMessage(`Closed ${path}`);
+  }, []);
 
   const saveActiveFile = useCallback(() => {
     if (!activeFile) {
@@ -192,15 +216,28 @@ export function EditorWorkbench({
               const isDirty = dirtySet.has(path);
               const isActive = path === activeFile;
               return (
-                <button
+                <div
                   key={path}
-                  type="button"
                   className={isActive ? "editor-tab active" : "editor-tab"}
-                  onClick={() => setActiveFile(path)}
                 >
-                  {path.split("/").pop()}
-                  {isDirty ? "*" : ""}
-                </button>
+                  <button
+                    type="button"
+                    className="editor-tab-main"
+                    onClick={() => setActiveFile(path)}
+                  >
+                    {path.split("/").pop()}
+                    {isDirty ? "*" : ""}
+                  </button>
+                  <button
+                    type="button"
+                    className="editor-tab-close"
+                    onClick={() => closeFile(path)}
+                    aria-label={`Close ${path}`}
+                    title="Close file"
+                  >
+                    x
+                  </button>
+                </div>
               );
             })}
           </div>

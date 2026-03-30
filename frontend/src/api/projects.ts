@@ -1,5 +1,5 @@
 import type { FileTreeNode, Project, ProjectDTO } from "../types";
-import { encodeFilePath, request } from "./client";
+import { normalizeFilePath, request } from "./client";
 
 export async function getUserProjects(): Promise<ProjectDTO[]> {
   return request<ProjectDTO[]>("/api/projects");
@@ -38,7 +38,16 @@ export async function getProjectFileTree(projectId: number): Promise<FileTreeNod
   return request<FileTreeNode>(`/api/projects/${projectId}/files`);
 }
 
-export async function getFileContent(projectId: number, filePath: string): Promise<string> {
-  const encodedPath = encodeFilePath(filePath);
-  return request<string>(`/api/projects/${projectId}/files/${encodedPath}`, undefined, true);
+export async function getFileContent(
+  projectId: number,
+  filePath: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const normalizedPath = normalizeFilePath(filePath);
+  const encodedPath = encodeURIComponent(normalizedPath);
+  return request<string>(
+    `/api/projects/${projectId}/file-content?path=${encodedPath}`,
+    { signal },
+    true
+  );
 }

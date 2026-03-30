@@ -89,6 +89,14 @@ public class ProjectController {
         return ResponseEntity.ok(content);
     }
 
+    @GetMapping("/{projectId}/file-content")
+    public ResponseEntity<String> getFileContentByQuery(
+            @PathVariable Long projectId,
+            @RequestParam("path") String filePath) {
+        String content = projectService.getFileContent(projectId, filePath);
+        return ResponseEntity.ok(content);
+    }
+
     private Long getCurrentUserId(OAuth2User principal) {
         // 从OAuth2User提取GitHub ID并查找对应的User
         return 1L; // 示例
