@@ -1,13 +1,19 @@
 package com.aicoding.Controller;
 
 import com.aicoding.Entity.DTO.ProjectDTO;
+import com.aicoding.Entity.model.CustomOAuth2User;
 import com.aicoding.Entity.model.Project;
+import com.aicoding.Exception.ProjectException;
 import com.aicoding.Service.ProjectService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.core.user.OAuth2User;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -21,88 +27,84 @@ public class ProjectController {
 
     @GetMapping
     public ResponseEntity<List<ProjectDTO>> getUserProjects(
-            @AuthenticationPrincipal OAuth2User principal) {
-        Long userId = getCurrentUserId(principal);
-        return ResponseEntity.ok(projectService.getUserProjects(userId));
+            @AuthenticationPrincipal CustomOAuth2User principal) {
+        return ResponseEntity.ok(projectService.getUserProjects(principal.getId()));
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<Project> uploadProject(
+    public ResponseEntity<ProjectDTO> uploadProject(
             @RequestParam("file") MultipartFile file,
             @RequestParam("name") String name,
             @RequestParam(value = "githubRepo", required = false) String githubRepo,
-            @AuthenticationPrincipal OAuth2User principal) {
-
-        Long userId = getCurrentUserId(principal);
-        String githubToken = getGitHubToken(principal);
-
+            @AuthenticationPrincipal CustomOAuth2User principal) {
         Project project = projectService.createProjectFromUpload(
-                userId, name, githubRepo, file, githubToken
+                principal.getId(), name, githubRepo, file, githubToken(principal)
         );
-
-        return ResponseEntity.ok(project);
+        return ResponseEntity.ok(ProjectDTO.from(project));
     }
 
     @PostMapping("/import/github")
-    public ResponseEntity<Project> importFromGitHub(
+    public ResponseEntity<ProjectDTO> importFromGitHub(
             @RequestParam("githubRepo") String githubRepo,
-            @AuthenticationPrincipal OAuth2User principal) {
-
-        Long userId = getCurrentUserId(principal);
-        String githubToken = getGitHubToken(principal);
-
+            @AuthenticationPrincipal CustomOAuth2User principal) {
         Project project = projectService.createProjectFromGitHub(
-                userId, githubRepo, githubToken
+                principal.getId(), githubRepo, githubToken(principal)
         );
-
-        return ResponseEntity.ok(project);
+        return ResponseEntity.ok(ProjectDTO.from(project));
     }
 
     @PostMapping("/{projectId}/sync")
     public ResponseEntity<Void> syncWithGitHub(
             @PathVariable Long projectId,
-            @AuthenticationPrincipal OAuth2User principal) {
-
-        String githubToken = getGitHubToken(principal);
-        projectService.syncWithGitHub(projectId, githubToken);
-
+            @AuthenticationPrincipal CustomOAuth2User principal) {
+        requireOwnership(projectId, principal);
+        projectService.syncWithGitHub(projectId, githubToken(principal));
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{projectId}/backup")
-    public ResponseEntity<String> backupProject(@PathVariable Long projectId) {
-        String backupPath = projectService.backupProject(projectId);
-        return ResponseEntity.ok(backupPath);
+    public ResponseEntity<String> backupProject(
+            @PathVariable Long projectId,
+            @AuthenticationPrincipal CustomOAuth2User principal) {
+        requireOwnership(projectId, principal);
+        return ResponseEntity.ok(projectService.backupProject(projectId));
     }
 
     @GetMapping("/{projectId}/files")
-    public ResponseEntity<?> getProjectFiles(@PathVariable Long projectId) {
+    public ResponseEntity<?> getProjectFiles(
+            @PathVariable Long projectId,
+            @AuthenticationPrincipal CustomOAuth2User principal) {
+        requireOwnership(projectId, principal);
         return ResponseEntity.ok(projectService.getProjectFileTree(projectId));
     }
 
     @GetMapping("/{projectId}/files/{*filePath}")
     public ResponseEntity<String> getFileContent(
             @PathVariable Long projectId,
-            @PathVariable String filePath) {
-        String content = projectService.getFileContent(projectId, filePath);
-        return ResponseEntity.ok(content);
+            @PathVariable String filePath,
+            @AuthenticationPrincipal CustomOAuth2User principal) {
+        requireOwnership(projectId, principal);
+        return ResponseEntity.ok(projectService.getFileContent(projectId, filePath));
     }
 
     @GetMapping("/{projectId}/file-content")
     public ResponseEntity<String> getFileContentByQuery(
             @PathVariable Long projectId,
-            @RequestParam("path") String filePath) {
-        String content = projectService.getFileContent(projectId, filePath);
-        return ResponseEntity.ok(content);
+            @RequestParam("path") String filePath,
+            @AuthenticationPrincipal CustomOAuth2User principal) {
+        requireOwnership(projectId, principal);
+        return ResponseEntity.ok(projectService.getFileContent(projectId, filePath));
     }
 
-    private Long getCurrentUserId(OAuth2User principal) {
-        // 从OAuth2User提取GitHub ID并查找对应的User
-        return 1L; // 示例
+    private void requireOwnership(Long projectId, CustomOAuth2User principal) {
+        projectService.getProjectByIdAndUserId(projectId, principal.getId());
     }
 
-    private String getGitHubToken(OAuth2User principal) {
-        // 从session或数据库获取GitHub token
-        return "token"; // 示例
+    private String githubToken(CustomOAuth2User principal) {
+        String token = principal.getUser().getGithubAccessToken();
+        if (token == null || token.isBlank()) {
+            throw new ProjectException("GitHub access token is unavailable; sign in again");
+        }
+        return token;
     }
 }

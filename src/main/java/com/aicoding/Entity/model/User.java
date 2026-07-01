@@ -1,5 +1,6 @@
 package com.aicoding.Entity.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -22,6 +23,7 @@ public class User {
     private String avatarUrl;
 
     @Column(length = 500)
+    @JsonIgnore
     private String githubAccessToken;
 
     private LocalDateTime createdAt;

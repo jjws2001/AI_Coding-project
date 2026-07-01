@@ -10,7 +10,6 @@ import com.aicoding.ai.tools.GitOperationTool;
 import com.aicoding.ai.tools.MemoryTool;
 import com.aicoding.ai.tools.SandboxExecutionTool;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
@@ -27,12 +26,18 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class AiServiceFactory {
     private final ChatModel chatModel;
-    private final StreamingChatModel streamingChatModel;
     private final ConcurrentChatModel concurrentChatModel;
     private final EmbeddingModel embeddingModel;
     private final ProjectEmbeddingStoreRegistry embeddingStoreRegistry;
     private final DynamicPromptService promptService;
     private final ChatMemoryRegistry chatMemoryRegistry;
+    private final FileOperationTool fileOperationTool;
+    private final CodeAnalysisTool codeAnalysisTool;
+    private final GitOperationTool gitOperationTool;
+    private final SandboxExecutionTool sandboxExecutionTool;
+    private final MemoryTool memoryTool;
+
+    private final Map<Long, AiCodingAssistant> project2Assistants = new ConcurrentHashMap<>();
 
     @Value("${ai.rag.max-results:5}")
     private Integer maxResults;
@@ -40,21 +45,7 @@ public class AiServiceFactory {
     @Value("${ai.rag.min-score:0.7}")
     private Double minScore;
 
-    // 内置工具
-    private final FileOperationTool fileOperationTool;
-    private final CodeAnalysisTool codeAnalysisTool;
-    private final GitOperationTool gitOperationTool;
-    private final SandboxExecutionTool sandboxExecutionTool;
-    private final MemoryTool memoryTool;
-//    @Resource
-//    private McpToolProvider mcpToolProvider;
-
-    // 缓存针对不同项目的 Assistant 代理实例
-    private final Map<Long, AiCodingAssistant> project2Assistants = new ConcurrentHashMap<>();
-
-    /**
-     * AI编程助手服务:针对 AiServices 动态构建特定项目的智能助手
-     */
+    /** Builds and caches one customized assistant per project. */
     public AiCodingAssistant getOrCreateAiAssistantForProject(Long projectId) {
         return project2Assistants.computeIfAbsent(projectId, id ->
                 AiServices.builder(AiCodingAssistant.class)
@@ -69,7 +60,6 @@ public class AiServiceFactory {
                         .tools(sandboxExecutionTool)
                         .tools(memoryTool)
                         .maxSequentialToolsInvocations(20)
-//                        .toolProvider(mcpToolProvider)
                         .build());
     }
 
@@ -81,23 +71,10 @@ public class AiServiceFactory {
                 .minScore(minScore)
                 .build();
     }
-    /**
-     * 附加功能：当项目被删除或重新建立索引时，清除缓存
-     */
+
+    /** Evicts stale assistants after an index rebuild or project deletion. */
     public void evictAssistant(Long projectId) {
         project2Assistants.remove(projectId);
-        log.info("Evicted AI Assistant cache for Project ID: {}", projectId);
-    }
-
-    /**
-     * 简单对话服务（不带工具和RAG）
-     */
-    public SimpleChatService simpleChatService() {
-        log.info("Building Simple Chat Service");
-
-        return AiServices.builder(SimpleChatService.class)
-                .chatModel(chatModel)
-                .streamingChatModel(streamingChatModel)
-                .build();
+        log.info("Evicted AI Assistant cache for project {}", projectId);
     }
 }

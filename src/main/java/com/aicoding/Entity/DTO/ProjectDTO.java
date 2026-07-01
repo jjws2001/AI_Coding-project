@@ -24,4 +24,18 @@ public class ProjectDTO {
     private LocalDateTime lastBackupAt;
     private Long fileCount;
     private Long totalSize;
+
+    public static ProjectDTO from(Project project) {
+        return ProjectDTO.builder()
+                .id(project.getId())
+                .name(project.getName())
+                .description(project.getDescription())
+                .githubRepoUrl(project.getGithubRepoUrl())
+                .githubRepoName(project.getGithubRepoName())
+                .status(project.getStatus())
+                .createdAt(project.getCreatedAt())
+                .updatedAt(project.getUpdatedAt())
+                .lastBackupAt(project.getLastBackupAt())
+                .build();
+    }
 }

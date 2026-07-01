@@ -1,42 +1,46 @@
 services:
   postgres:
     image: postgres:16
+    container_name: aicode-postgres
     environment:
       POSTGRES_DB: aicode
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: your_password
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-your_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-  
-#  redis:
-#    image: redis:7-alpine
-#    ports:
-#      - "6379:6379"
-  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aicode"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   minio:
     image: minio/minio:latest
-    command: server /data --console-address ":9001"
     container_name: aicode-minio
+    command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"  # API 端口
-      - "9001:9001"  # Web 控制台端口（浏览器访问用）
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/data
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
     container_name: aicode-etcd
+    command: >-
+      etcd --advertise-client-urls=http://127.0.0.1:2379
+      --listen-client-urls=http://0.0.0.0:2379
+      --data-dir=/etcd
     environment:
-      - ETCD_AUTO_COMPACTION_MODE=revision
-      - ETCD_AUTO_COMPACTION_RETENTION=1000
-      - ETCD_QUOTA_BACKEND_BYTES=4294967296
-      - ETCD_SNAPSHOT_COUNT=50000
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir /etcd
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: 1000
+      ETCD_QUOTA_BACKEND_BYTES: 4294967296
+      ETCD_SNAPSHOT_COUNT: 50000
     volumes:
       - etcd_data:/etcd
 
@@ -47,8 +51,8 @@ services:
     environment:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
-      MINIO_ACCESS_KEY_ID: minioadmin
-      MINIO_SECRET_ACCESS_KEY: minioadmin
+      MINIO_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
       - "19530:19530"
       - "9091:9091"
@@ -57,27 +61,9 @@ services:
       - minio
     volumes:
       - milvus_data:/var/lib/milvus
-  
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-  
-  openclaw:
-    image: openclaw/openclaw:latest
-    ports:
-      - "18789:18789"
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-    volumes:
-      - openclaw_workspace:/workspace
 
 volumes:
   postgres_data:
   minio_data:
   etcd_data:
   milvus_data:
-  chroma_data:
-  openclaw_workspace:

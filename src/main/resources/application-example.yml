@@ -1,9 +1,11 @@
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/aicode
+    driver-class-name: org.postgresql.Driver
     username: postgres
     password: ${DB_PASSWORD:your_password}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
   security:
@@ -14,6 +16,12 @@ spring:
             client-id: ${GITHUB_CLIENT_ID:}
             client-secret: ${GITHUB_CLIENT_SECRET:}
             scope: read:user,user:email,repo
+
+app:
+  oauth2:
+    redirect-uri: ${APP_OAUTH2_REDIRECT_URI:http://localhost:3000}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
 
 workspace:
   base-path: ${WORKSPACE_BASE_PATH:./workspace}
@@ -27,9 +35,12 @@ ai:
     api-key: ${OPENAI_API_KEY:}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
     model: ${OPENAI_MODEL:gpt-4.1-mini}
+    embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
     temperature: 0.2
     max-tokens: 4000
     timeout: 60
+    log-requests: false
+    log-responses: false
   rag:
     # Use in-memory for a zero-dependency demo. Build with -Pmilvus for Milvus.
     store: ${AI_RAG_STORE:in-memory}

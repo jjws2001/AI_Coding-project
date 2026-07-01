@@ -1,6 +1,5 @@
 package com.aicoding.ai;
 
-import com.aicoding.Entity.model.Project;
 import com.aicoding.Service.ProjectService;
 import com.aicoding.ai.guardrail.GuardrailsFilter;
 import com.aicoding.ai.harness.HarnessPolicyEngine;
@@ -20,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.List;
@@ -40,13 +41,9 @@ public class AIService {
     private final HarnessPolicyEngine policyEngine;
     private final HarnessRuntimeRegistry runtimeRegistry;
 
-    /**
-     * Rebuilds a project-scoped RAG index. Ingestion and retrieval share the
-     * same store from ProjectEmbeddingStoreRegistry.
-     */
+    /** Rebuilds a project-scoped RAG index used by the same project's retriever. */
     @Transactional(readOnly = true)
-    public void indexProject(Long projectId, String... changedFiles) {
-        Project project = projectService.getProjectById(projectId);
+    public void indexProject(Long projectId) {
         Path projectRoot = projectService.getProjectRootPath(projectId);
         List<Document> documents = loadProjectDocuments(projectRoot);
         if (documents.isEmpty()) {
@@ -63,12 +60,7 @@ public class AIService {
                 .ingest(documents);
 
         aiServiceFactory.evictAssistant(projectId);
-        log.info("Indexed {} documents for project {} ({})", documents.size(), projectId, project.getName());
-    }
-
-    public String chatMini(Long projectId, String userMessage, String sessionId) {
-        String filteredMessage = guardrailsFilter.filter(userMessage);
-        return guardrailsFilter.filter(aiServiceFactory.simpleChatService().chat(sessionId, filteredMessage));
+        log.info("Indexed {} documents for project {}", documents.size(), projectId);
     }
 
     public String chat(Long projectId, String userMessage, String sessionId) {
@@ -116,35 +108,6 @@ public class AIService {
         }
     }
 
-    private List<Document> loadProjectDocuments(Path projectRoot) {
-        Path normalizedRoot = projectRoot.toAbsolutePath().normalize();
-        return FileSystemDocumentLoader.loadDocuments(projectRoot, (PathMatcher) path -> {
-            String normalized = path.toString().replace('\\', '/').toLowerCase();
-            boolean safePath;
-            try {
-                safePath = !java.nio.file.Files.isSymbolicLink(path)
-                        && path.toAbsolutePath().normalize().startsWith(normalizedRoot)
-                        && path.toRealPath().startsWith(normalizedRoot.toRealPath());
-            } catch (java.io.IOException e) {
-                safePath = false;
-            }
-            return safePath
-                    && !normalized.contains("/node_modules/")
-                    && !normalized.contains("/.git/")
-                    && !normalized.contains("/target/")
-                    && !normalized.contains("/build/")
-                    && (normalized.endsWith(".java")
-                    || normalized.endsWith(".kt")
-                    || normalized.endsWith(".ts")
-                    || normalized.endsWith(".tsx")
-                    || normalized.endsWith(".js")
-                    || normalized.endsWith(".jsx")
-                    || normalized.endsWith(".py")
-                    || normalized.endsWith(".go")
-                    || normalized.endsWith(".md"));
-        });
-    }
-
     public String reviewCode(Long projectId, String code, String sessionId) {
         String request = "Perform a risk-focused code review.\n\n" + guardrailsFilter.filter(code);
         AiCodingAssistant assistant = aiServiceFactory.getOrCreateAiAssistantForProject(projectId);
@@ -159,25 +122,34 @@ public class AIService {
                 promptService.enrichUserMessage(projectId, sessionId, request)));
     }
 
-    public String generateCode(Long projectId, String requirements, String language) {
-        String sessionId = "generation-" + projectId;
-        String request = "Generate " + language + " code for these requirements:\n" + guardrailsFilter.filter(requirements);
-        AiCodingAssistant assistant = aiServiceFactory.getOrCreateAiAssistantForProject(projectId);
-        return guardrailsFilter.filter(assistant.generateCode(sessionId,
-                promptService.enrichUserMessage(projectId, sessionId, request)));
+    private List<Document> loadProjectDocuments(Path projectRoot) {
+        Path normalizedRoot = projectRoot.toAbsolutePath().normalize();
+        return FileSystemDocumentLoader.loadDocuments(projectRoot, (PathMatcher) path -> {
+            String normalized = path.toString().replace('\\', '/').toLowerCase();
+            return isSafeIndexPath(path, normalizedRoot)
+                    && !normalized.contains("/node_modules/")
+                    && !normalized.contains("/.git/")
+                    && !normalized.contains("/target/")
+                    && !normalized.contains("/build/")
+                    && isIndexable(normalized);
+        });
     }
 
-    public String fixCode(Long projectId, String code, String errorMessage) {
-        String sessionId = "fix-" + projectId;
-        String request = "Fix the code using the error evidence.\nError:\n"
-                + guardrailsFilter.filter(errorMessage) + "\nCode:\n" + guardrailsFilter.filter(code);
-        AiCodingAssistant assistant = aiServiceFactory.getOrCreateAiAssistantForProject(projectId);
-        return guardrailsFilter.filter(assistant.fixCode(sessionId,
-                promptService.enrichUserMessage(projectId, sessionId, request)));
+    private boolean isSafeIndexPath(Path path, Path normalizedRoot) {
+        try {
+            return !Files.isSymbolicLink(path)
+                    && path.toAbsolutePath().normalize().startsWith(normalizedRoot)
+                    && path.toRealPath().startsWith(normalizedRoot.toRealPath());
+        } catch (IOException e) {
+            return false;
+        }
     }
 
-    public String callOpenClaw(Project project, String task) {
-        log.info("Calling OpenClaw for project {} with task: {}", project == null ? null : project.getId(), task);
-        return "OpenClaw gateway is not configured";
+    private boolean isIndexable(String path) {
+        return path.endsWith(".java") || path.endsWith(".kt")
+                || path.endsWith(".ts") || path.endsWith(".tsx")
+                || path.endsWith(".js") || path.endsWith(".jsx")
+                || path.endsWith(".py") || path.endsWith(".go")
+                || path.endsWith(".md");
     }
 }
