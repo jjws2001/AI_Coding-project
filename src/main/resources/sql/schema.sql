@@ -40,3 +40,20 @@ CREATE TABLE IF NOT EXISTS `projects` (
     ON UPDATE CASCADE
     ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `agent_memories` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT NOT NULL,
+  `session_id` VARCHAR(128) DEFAULT NULL,
+  `type` VARCHAR(32) NOT NULL,
+  `content` LONGTEXT NOT NULL,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_memory_project_updated` (`project_id`, `updated_at`),
+  KEY `idx_memory_project_type` (`project_id`, `type`),
+  CONSTRAINT `fk_agent_memory_project_id`
+    FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

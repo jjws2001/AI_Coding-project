@@ -1,15 +1,18 @@
 package com.aicoding;
 
 import com.aicoding.Entity.model.CustomOAuth2User;
+import com.aicoding.Entity.model.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.lang.reflect.Field;
 import java.util.*;
 
-import static java.lang.Integer.min;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
+@ActiveProfiles("test")
 class AiCodingPlatformApplicationTests {
 
     @Test
@@ -17,18 +20,22 @@ class AiCodingPlatformApplicationTests {
     }
 
     @Test
-    void ReflectTest(CustomOAuth2User customOAuth2User) throws IllegalAccessException {
+    void ReflectTest() throws IllegalAccessException {
+        User user = new User();
+        user.setUsername("tester");
+        CustomOAuth2User customOAuth2User = new CustomOAuth2User(user, Map.of("login", "tester"));
         Map<String, Object> map = new HashMap<>();
         Class<?> clazz = CustomOAuth2User.class;
         for (Field field:clazz.getDeclaredFields()) {
             field.setAccessible(true);
             map.put(field.getName(), field.get(customOAuth2User));
         }
-        System.out.println(map);
+        assertThat(map).containsKeys("user", "attributes");
     }
 
     @Test
-    void ComparatorTest(int[] nums) {
+    void ComparatorTest() {
+        int[] nums = {3, 30, 34, 5, 9};
         Integer[] integers = new Integer[nums.length];
         for (int i = 0; i < nums.length; i++) {
             integers[i] = nums[i];
@@ -63,6 +70,7 @@ class AiCodingPlatformApplicationTests {
         for (int i = 0;i < integers.length;i++) {
             res = res + integers[i];
         }
+        assertThat(res).isNotBlank();
     }
 
 }

@@ -4,6 +4,7 @@ import com.aicoding.Entity.DTO.ChatRequest;
 import com.aicoding.Entity.DTO.CodeExplainRequest;
 import com.aicoding.Entity.DTO.CodeReviewRequest;
 import com.aicoding.ai.AIService;
+import com.aicoding.ai.memory.ChatMemoryRegistry;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import reactor.core.publisher.Flux;
 public class AIController {
 
     private final AIService aiService;
+    private final ChatMemoryRegistry chatMemoryRegistry;
 
     /**
      *前端发送
@@ -124,8 +126,16 @@ public class AIController {
      */
     @PostMapping("/projects/{projectId}/index")
     public ResponseEntity<Void> indexProject(@PathVariable Long projectId) {
-         aiService.indexProject(projectId, null);
+         aiService.indexProject(projectId);
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/context/compact")
+    public ResponseEntity<ChatResponse> compactContext(@RequestBody CompactContextRequest request) {
+        boolean compacted = chatMemoryRegistry.compact(request.projectId(), request.sessionId());
+        return ResponseEntity.ok(new ChatResponse(compacted
+                ? "Conversation context compacted"
+                : "No active conversation context found"));
     }
 
     /**
@@ -216,6 +226,7 @@ public class AIController {
 
 record ChatResponse(String response) {}
 record OpenClawRequest(String task) {}
+record CompactContextRequest(Long projectId, String sessionId) {}
 
 /**
  * [前端]

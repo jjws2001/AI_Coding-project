@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:aicode;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  data:
+    redis:
+      repositories:
+        enabled: false
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: test-client
+            client-secret: test-secret
+            scope: read:user,user:email
+
+workspace:
+  base-path: ${java.io.tmpdir}/aicoding-test-workspace
+  backup-cron: "0 0 3 * * ?"
+
+guardrails:
+  patterns: "(?i)secret\\s*[:=]\\s*\\S+"
+
+ai:
+  openai:
+    api-key: test-key
+    base-url: http://localhost:9999/v1
+    model: test-model
+    timeout: 1
+  rag:
+    store: in-memory
+    max-results: 3
+    min-score: 0.5
+  sandbox:
+    enabled: false
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: test-access
+  secret-key: test-secret
+  bucket-name: test-bucket

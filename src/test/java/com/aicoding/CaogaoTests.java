@@ -1,6 +1,7 @@
 package com.aicoding;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -29,6 +30,7 @@ public class CaogaoTests {
     @Test
     public void sumCalc() {
         String filename = "D:\\IdeaProjects\\ai-coding-platform\\src\\main\\resources\\data.txt";
+        Assumptions.assumeTrue(new File(filename).isFile(), "Optional scratch data file is absent");
         double res = 0.0;
 
         try(Scanner scanner = new Scanner(new File(filename))) {

@@ -4,138 +4,257 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
-import java.util.Queue;
+import java.util.Locale;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Wrapper for StreamingChatModel that adds concurrency control (Semaphore + Queue).
- * Implements the standard LangChain4j interface.
+ * Streaming model decorator with a fair semaphore, expiring request queue,
+ * retry queue with exponential backoff, circuit breaker, and bounded DLQ.
  */
 @Slf4j
 @Component
-@Primary // Make this the primary bean so it's injected by default
+@Primary
 public class ConcurrentChatModel implements StreamingChatModel {
+
+    private static final int MAX_DLQ_SIZE = 1_000;
 
     private final StreamingChatModel delegate;
     private final LlmConcurrencyControl concurrencyControl;
-
-    // Internal Queue for requests waiting for a permit
-    private final Queue<PendingRequest> requestQueue = new ConcurrentLinkedQueue<>();
+    private final PriorityBlockingQueue<PendingRequest> requestQueue = new PriorityBlockingQueue<>();
+    private final ConcurrentLinkedDeque<DeadLetter> deadLetters = new ConcurrentLinkedDeque<>();
+    private final ScheduledExecutorService dispatcher;
+    private final Object dispatchLock = new Object();
+    private final int maxRetries;
+    private final long retryBaseDelayMs;
+    private final long retryMaxDelayMs;
+    private final long queueTtlMs;
+    private final int circuitFailureThreshold;
+    private final long circuitOpenMs;
+    private final AtomicInteger consecutiveFailures = new AtomicInteger();
+    private final AtomicLong circuitOpenUntil = new AtomicLong();
 
     public ConcurrentChatModel(
             @Qualifier("openAiStreamingChatModel") StreamingChatModel delegate,
-            LlmConcurrencyControl concurrencyControl
-    ) {
+            LlmConcurrencyControl concurrencyControl,
+            @Value("${ai.llm.max-retries:3}") int maxRetries,
+            @Value("${ai.llm.retry-base-delay-ms:500}") long retryBaseDelayMs,
+            @Value("${ai.llm.retry-max-delay-ms:8000}") long retryMaxDelayMs,
+            @Value("${ai.llm.queue-ttl-seconds:120}") long queueTtlSeconds,
+            @Value("${ai.llm.circuit-failure-threshold:5}") int circuitFailureThreshold,
+            @Value("${ai.llm.circuit-open-seconds:30}") long circuitOpenSeconds) {
         this.delegate = delegate;
         this.concurrencyControl = concurrencyControl;
+        this.maxRetries = Math.max(0, maxRetries);
+        this.retryBaseDelayMs = Math.max(10, retryBaseDelayMs);
+        this.retryMaxDelayMs = Math.max(this.retryBaseDelayMs, retryMaxDelayMs);
+        this.queueTtlMs = TimeUnit.SECONDS.toMillis(Math.max(1, queueTtlSeconds));
+        this.circuitFailureThreshold = Math.max(1, circuitFailureThreshold);
+        this.circuitOpenMs = TimeUnit.SECONDS.toMillis(Math.max(1, circuitOpenSeconds));
+        this.dispatcher = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "llm-request-dispatcher");
+            thread.setDaemon(true);
+            return thread;
+        });
+        this.dispatcher.scheduleWithFixedDelay(this::processQueueSafely, 0, 100, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public void chat(List<ChatMessage> messages, StreamingChatResponseHandler handler) {
-        // Enqueue the request instead of blocking the calling thread
-        String requestId = UUID.randomUUID().toString();
-        requestQueue.offer(new PendingRequest(requestId, messages, handler));
-        log.debug("Request queued: {}. Queue size: {}", requestId, requestQueue.size());
-
-        // Try to process the queue
-        processQueue();
+        long now = System.currentTimeMillis();
+        PendingRequest request = new PendingRequest(UUID.randomUUID().toString(), List.copyOf(messages), handler,
+                0, now, now);
+        if (circuitOpenUntil.get() > now) {
+            failPermanently(request, new RejectedExecutionException("LLM circuit breaker is open"));
+            return;
+        }
+        requestQueue.offer(request);
+        processQueueSafely();
     }
 
-    /**
-     * Process requests from the queue if permits are available.
-     * This method is non-blocking and thread-safe.
-     */
+    private void processQueueSafely() {
+        try {
+            processQueue();
+        } catch (RuntimeException e) {
+            log.error("LLM queue dispatcher failed", e);
+        }
+    }
+
     private void processQueue() {
-        // Double-check locking optimization or just simple loop since tryAcquire is fast
-        while (!requestQueue.isEmpty()) {
-            if (concurrencyControl.tryAcquire()) {
-                PendingRequest request = requestQueue.poll();
-                if (request != null) {
-                    startRequest(request);
-                } else {
-                    // Queue became empty after check, return permit
-                    concurrencyControl.release("UNUSED_PERMIT_" + UUID.randomUUID());
-                    // Note: Ideally release logic in controller should handle raw releases too,
-                    // but our controller expects IDs. Let's fix this edge case in logic:
-                    // If poll returns null, we acquired a permit we don't need.
-                    // Since concurrencyControl.release() removes from map, we need a "raw release" method
-                    // or just ensure queue consistency. For simplicity here:
-                    // If poll is null, we just lose a permit cycle or strictly synchronize.
-                    // Better: poll first, then acquire? No, that blocks others if acquire fails.
-                    break;
+        synchronized (dispatchLock) {
+            while (true) {
+                PendingRequest next = requestQueue.peek();
+                if (next == null) {
+                    return;
                 }
-            } else {
-                // No permits available, stop processing
-                break;
+                long now = System.currentTimeMillis();
+                if (isExpired(next, now)) {
+                    requestQueue.poll();
+                    failPermanently(next, new TimeoutException("LLM request expired in queue"));
+                    continue;
+                }
+                if (next.availableAtMs > now) {
+                    return;
+                }
+                if (circuitOpenUntil.get() > now || !concurrencyControl.tryAcquire()) {
+                    return;
+                }
+                PendingRequest request = requestQueue.poll();
+                if (request == null) {
+                    concurrencyControl.releaseUnusedPermit();
+                    return;
+                }
+                startRequest(request);
             }
         }
     }
 
     private void startRequest(PendingRequest request) {
-        log.info("Starting LLM request: {}", request.id);
+        AtomicBoolean finished = new AtomicBoolean(false);
+        AtomicBoolean emitted = new AtomicBoolean(false);
 
-        // Atomic flag to ensure we only clean up once
-        AtomicBoolean isFinished = new AtomicBoolean(false);
-
-        // Define cleanup logic
-        Runnable cleanup = () -> {
-            if (isFinished.compareAndSet(false, true)) {
-                concurrencyControl.release(request.id);
-                // After releasing a permit, trigger queue processing for waiting requests
-                processQueue();
-            }
-        };
-
-        // Register with Watchdog
         concurrencyControl.registerRequest(request.id, () -> {
-            log.warn("Request {} cancelled by watchdog", request.id);
-            request.handler.onError(new java.util.concurrent.TimeoutException("LLM Request timed out"));
-            // Cleanup is handled by concurrencyControl.release called inside checkTimeouts
-            // But we need to make sure we don't double release in onComplete
-            isFinished.set(true);
+            if (finished.compareAndSet(false, true)) {
+                handleFailure(request, new TimeoutException("LLM request timed out"), emitted.get(), false);
+            }
         });
 
         try {
-            // Call the actual model
             delegate.chat(request.messages, new StreamingChatResponseHandler() {
                 @Override
                 public void onPartialResponse(String partialResponse) {
-                    if (!isFinished.get()) {
+                    if (!finished.get()) {
+                        emitted.set(true);
                         request.handler.onPartialResponse(partialResponse);
                     }
                 }
 
                 @Override
                 public void onCompleteResponse(ChatResponse completeResponse) {
-                    if (!isFinished.get()) {
+                    if (finished.compareAndSet(false, true)) {
+                        consecutiveFailures.set(0);
+                        concurrencyControl.release(request.id);
                         request.handler.onCompleteResponse(completeResponse);
-                        cleanup.run();
+                        processQueueSafely();
                     }
                 }
 
                 @Override
                 public void onError(Throwable error) {
-                    if (!isFinished.get()) {
-                        log.error("LLM Request {} failed", request.id, error);
-                        request.handler.onError(error);
-                        cleanup.run();
+                    if (finished.compareAndSet(false, true)) {
+                        concurrencyControl.release(request.id);
+                        handleFailure(request, error, emitted.get(), true);
                     }
                 }
             });
-        } catch (Exception e) {
-            log.error("Failed to start request {}", request.id, e);
-            request.handler.onError(e);
-            cleanup.run();
+        } catch (RuntimeException e) {
+            if (finished.compareAndSet(false, true)) {
+                concurrencyControl.release(request.id);
+                handleFailure(request, e, emitted.get(), true);
+            }
         }
     }
 
-    private record PendingRequest(String id, List<ChatMessage> messages, StreamingChatResponseHandler handler) {}
+    private void handleFailure(PendingRequest request, Throwable error, boolean emitted, boolean processAfter) {
+        long now = System.currentTimeMillis();
+        if (!emitted && isRetryable(error) && request.attempt < maxRetries && !isExpired(request, now)) {
+            long delay = Math.min(retryMaxDelayMs, retryBaseDelayMs * (1L << request.attempt));
+            requestQueue.offer(request.retryAt(now + delay));
+            log.warn("Retrying LLM request {} in {}ms (attempt {}/{})", request.id, delay,
+                    request.attempt + 1, maxRetries);
+        } else {
+            failPermanently(request, error);
+            int failures = consecutiveFailures.incrementAndGet();
+            if (failures >= circuitFailureThreshold && isRetryable(error)) {
+                circuitOpenUntil.set(now + circuitOpenMs);
+                consecutiveFailures.set(0);
+                log.error("LLM circuit breaker opened for {}ms", circuitOpenMs);
+            }
+        }
+        if (processAfter) {
+            processQueueSafely();
+        }
+    }
+
+    private void failPermanently(PendingRequest request, Throwable error) {
+        DeadLetter deadLetter = new DeadLetter(request.id, request.attempt, Instant.now(),
+                error.getClass().getSimpleName(), String.valueOf(error.getMessage()));
+        deadLetters.addFirst(deadLetter);
+        while (deadLetters.size() > MAX_DLQ_SIZE) {
+            deadLetters.pollLast();
+        }
+        try {
+            request.handler.onError(error);
+        } catch (RuntimeException handlerError) {
+            log.warn("LLM error handler failed for request {}", request.id, handlerError);
+        }
+    }
+
+    private boolean isRetryable(Throwable error) {
+        if (error instanceof TimeoutException || error instanceof IOException) {
+            return true;
+        }
+        String message = String.valueOf(error.getMessage()).toLowerCase(Locale.ROOT);
+        return message.contains("timeout") || message.contains("timed out")
+                || message.contains("429") || message.contains("rate limit")
+                || message.contains("502") || message.contains("503")
+                || message.contains("connection") || message.contains("temporarily unavailable");
+    }
+
+    private boolean isExpired(PendingRequest request, long now) {
+        return now - request.enqueuedAtMs > queueTtlMs;
+    }
+
+    public int getQueuedRequestCount() {
+        return requestQueue.size();
+    }
+
+    public int getDeadLetterCount() {
+        return deadLetters.size();
+    }
+
+    public List<DeadLetter> getRecentDeadLetters() {
+        return deadLetters.stream().limit(20).toList();
+    }
+
+    public boolean isCircuitOpen() {
+        return circuitOpenUntil.get() > System.currentTimeMillis();
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        dispatcher.shutdownNow();
+    }
+
+    private record PendingRequest(String id, List<ChatMessage> messages,
+                                  StreamingChatResponseHandler handler, int attempt,
+                                  long enqueuedAtMs, long availableAtMs)
+            implements Comparable<PendingRequest> {
+
+        private PendingRequest retryAt(long availableAtMs) {
+            return new PendingRequest(id, messages, handler, attempt + 1, enqueuedAtMs, availableAtMs);
+        }
+
+        @Override
+        public int compareTo(PendingRequest other) {
+            int byAvailability = Long.compare(availableAtMs, other.availableAtMs);
+            return byAvailability != 0 ? byAvailability : Long.compare(enqueuedAtMs, other.enqueuedAtMs);
+        }
+    }
+
+    public record DeadLetter(String requestId, int attempts, Instant failedAt,
+                             String errorType, String errorMessage) {}
 }

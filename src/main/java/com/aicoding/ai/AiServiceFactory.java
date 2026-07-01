@@ -1,17 +1,19 @@
 package com.aicoding.ai;
 
 import com.aicoding.ai.ConcurrentClass.ConcurrentChatModel;
+import com.aicoding.ai.memory.ChatMemoryRegistry;
+import com.aicoding.ai.prompt.DynamicPromptService;
+import com.aicoding.ai.rag.ProjectEmbeddingStoreRegistry;
 import com.aicoding.ai.tools.CodeAnalysisTool;
 import com.aicoding.ai.tools.FileOperationTool;
 import com.aicoding.ai.tools.GitOperationTool;
+import com.aicoding.ai.tools.MemoryTool;
 import com.aicoding.ai.tools.SandboxExecutionTool;
-import dev.langchain4j.mcp.McpToolProvider;
-import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
-import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,17 +29,23 @@ public class AiServiceFactory {
     private final ChatModel chatModel;
     private final StreamingChatModel streamingChatModel;
     private final ConcurrentChatModel concurrentChatModel;
+    private final EmbeddingModel embeddingModel;
+    private final ProjectEmbeddingStoreRegistry embeddingStoreRegistry;
+    private final DynamicPromptService promptService;
+    private final ChatMemoryRegistry chatMemoryRegistry;
 
-    private final EmbeddingStoreContentRetriever contentRetriever;
+    @Value("${ai.rag.max-results:5}")
+    private Integer maxResults;
 
-    @Value("${ai.chat-memory.max-messages:10}")
-    private Integer maxMessages;
+    @Value("${ai.rag.min-score:0.7}")
+    private Double minScore;
 
     // 内置工具
     private final FileOperationTool fileOperationTool;
     private final CodeAnalysisTool codeAnalysisTool;
     private final GitOperationTool gitOperationTool;
     private final SandboxExecutionTool sandboxExecutionTool;
+    private final MemoryTool memoryTool;
 //    @Resource
 //    private McpToolProvider mcpToolProvider;
 
@@ -52,16 +60,26 @@ public class AiServiceFactory {
                 AiServices.builder(AiCodingAssistant.class)
                         .chatModel(chatModel)
                         .streamingChatModel(concurrentChatModel)
-                        .contentRetriever(contentRetriever)
-                        // 记忆配置
-                        .chatMemoryProvider(memoryId ->
-                                MessageWindowChatMemory.withMaxMessages(maxMessages))
+                        .systemMessageProvider(memoryId -> promptService.buildSystemPrompt(id))
+                        .contentRetriever(createRetriever(id))
+                        .chatMemoryProvider(memoryId -> chatMemoryRegistry.get(id, memoryId))
                         .tools(fileOperationTool)
                         .tools(codeAnalysisTool)
                         .tools(gitOperationTool)
-//                        .tools(sandboxExecutionTool)
+                        .tools(sandboxExecutionTool)
+                        .tools(memoryTool)
+                        .maxSequentialToolsInvocations(20)
 //                        .toolProvider(mcpToolProvider)
                         .build());
+    }
+
+    private EmbeddingStoreContentRetriever createRetriever(Long projectId) {
+        return EmbeddingStoreContentRetriever.builder()
+                .embeddingStore(embeddingStoreRegistry.get(projectId))
+                .embeddingModel(embeddingModel)
+                .maxResults(maxResults)
+                .minScore(minScore)
+                .build();
     }
     /**
      * 附加功能：当项目被删除或重新建立索引时，清除缓存
