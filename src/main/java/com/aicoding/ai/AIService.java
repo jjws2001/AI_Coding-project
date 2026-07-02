@@ -7,6 +7,7 @@ import com.aicoding.ai.harness.HarnessRuntimeRegistry;
 import com.aicoding.ai.prompt.DynamicPromptService;
 import com.aicoding.ai.rag.ProjectEmbeddingStoreRegistry;
 import com.aicoding.ai.rag.ProjectRagIndexer;
+import com.aicoding.ai.rag.ProjectSymbolIndexRegistry;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class AIService {
 
     private final ProjectRagIndexer ragIndexer;
     private final ProjectEmbeddingStoreRegistry embeddingStoreRegistry;
+    private final ProjectSymbolIndexRegistry symbolIndexRegistry;
     private final AiServiceFactory aiServiceFactory;
     private final GuardrailsFilter guardrailsFilter;
     private final ProjectService projectService;
@@ -39,12 +41,16 @@ public class AIService {
         Path projectRoot = projectService.getProjectRootPath(projectId);
         List<TextSegment> segments = ragIndexer.load(projectRoot);
         if (segments.isEmpty()) {
+            embeddingStoreRegistry.reset(projectId);
+            symbolIndexRegistry.replace(projectId, List.of());
+            aiServiceFactory.evictAssistant(projectId);
             log.warn("No indexable documents found for project {}", projectId);
             return;
         }
 
         EmbeddingStore<TextSegment> projectStore = embeddingStoreRegistry.reset(projectId);
         ProjectRagIndexer.IndexingResult result = ragIndexer.index(projectId, segments, projectStore);
+        symbolIndexRegistry.replace(projectId, segments);
 
         aiServiceFactory.evictAssistant(projectId);
         log.info("Indexed {} files as {} structured chunks for project {}",

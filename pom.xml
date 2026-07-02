@@ -29,6 +29,7 @@
     <properties>
         <java.version>21</java.version>
         <langchain4j.version>1.1.0</langchain4j.version>
+        <lucene.version>9.12.1</lucene.version>
     </properties>
     <dependencies>
         <!-- Spring Boot -->
@@ -88,6 +89,18 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-reactor</artifactId>
             <version>1.1.0-beta7</version>
+        </dependency>
+
+        <!-- Sparse code-symbol retrieval for hybrid RAG -->
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-common</artifactId>
+            <version>${lucene.version}</version>
         </dependency>
 
 

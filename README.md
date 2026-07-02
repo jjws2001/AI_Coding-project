@@ -6,7 +6,7 @@
 
 - **云端代码资产**：GitHub OAuth2 登录、仓库导入、JGit 同步、MinIO 备份、Monaco Editor 与 WebSocket 协同更新。
 - **项目级 Agent**：用 `ConcurrentHashMap<Long, AiCodingAssistant>` 缓存每个项目的定制 Assistant，组装文件、代码分析、Git、记忆和沙箱工具。
-- **RAG 索引**：按全限定类名、文件名和分片号建立结构化代码标识，按行切分大型文件并批量摄入；每个项目独立 collection，摄入与检索共享同一 `EmbeddingStore`。
+- **混合 RAG**：按全限定类名、文件名和分片号建立结构化代码标识，Milvus Dense/HNSW 与 Lucene BM25 符号召回并行执行，再通过 RRF 融合文件名、类名、方法名和语义结果。
 - **Prompt / Context Engineering**：Markdown 模块化 System Prompt、Skills 渐进式披露、RAG 按需召回、三层上下文压缩与 JPA 长期记忆。
 - **Harness Engineering**：工作区边界、写入前 Hook、沙箱验证、运行审计和定时 HEARTBEAT，降低 Agent 越权与“改完不验证”的风险。
 - **LLM 稳定性治理**：公平信号量、带 TTL 的优先队列、指数退避重试、熔断器和有界 DLQ。
@@ -61,6 +61,8 @@ GitHub OAuth2 登录成功后，平台持久化用户信息和访问令牌；导
 
 默认使用内存向量库便于本地演示；启用 `milvus` Profile 后，每个项目创建 `project_{projectId}` collection，底层索引为 **HNSW**，距离度量为 **COSINE**，一致性级别为 `BOUNDED`。HNSW 对查询向量执行近邻检索，字符串逻辑键不参与图距离计算；把逻辑键放入 Embedding 文本可增强类名和文件名命中，Metadata 则用于结果定位和解释。当前默认 Embedding 模型是 `text-embedding-3-small`，维度为 1536；切换模型时必须同步调整 `ai.milvus.dimension` 并重建 collection。
 
+查询阶段由 `HybridCodeContentRetriever` 并行取得 18 个 Dense 候选和 18 个 Lucene 候选。Lucene 项目级内存索引使用 BM25，并对文件名、全限定类名、方法/函数名的精确、前缀、后缀及轻量拼写纠错匹配加权；两路排名使用加权 RRF 融合，默认 Dense 权重 1.0、Symbol 权重 1.2，Symbol 权重再按 Lucene 原始得分缩放，避免普通英文词命中压过高质量语义结果，去重后返回 6 个片段。符号索引可从 Workspace 懒加载，Embedding 服务异常但符号命中时可以降级返回代码片段。
+
 ### 3. Agent 与 Prompt 组装
 
 首次访问项目时，`AiServiceFactory` 原子创建并缓存 Assistant。System Prompt 由 `identity.md`、`tool-policy.md`、`safety.md`、`harness.md`、项目身份、Skills 元数据及项目内 `.aicoding/AGENT.md` 动态拼装。运行时再根据用户意图加载匹配的内置或项目级 Skill，并注入相关长期记忆，避免把所有上下文一次性塞入窗口。
@@ -100,7 +102,7 @@ src/main/java/com/aicoding/
     harness/                           Workspace、验证 Hook、HEARTBEAT
     memory/                            分层上下文与长期记忆
     prompt/                            Prompt 模块与 Skills 加载
-    rag/                               结构化代码切片、批量摄入与项目级 Store
+    rag/                               结构化切片、Dense/Symbol 索引与 RRF 混合召回
     tools/                             Agent 工具集合
 src/main/resources/agent/              Markdown Prompt 与 Skills
 src/milvus/java/                       可选 Milvus 实现

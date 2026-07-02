@@ -35,6 +35,11 @@ ai:
     store: in-memory
     max-results: 3
     min-score: 0.5
+    dense-candidates: 9
+    symbol-candidates: 9
+    rrf-k: 60
+    dense-weight: 1.0
+    symbol-weight: 1.2
     large-file-lines: 400
     chunk-size-lines: 200
     chunk-overlap-lines: 30
