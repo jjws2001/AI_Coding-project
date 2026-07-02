@@ -45,6 +45,10 @@ ai:
     store: ${AI_RAG_STORE:in-memory}
     max-results: 6
     min-score: 0.65
+    large-file-lines: 400
+    chunk-size-lines: 200
+    chunk-overlap-lines: 30
+    embedding-batch-size: 64
   milvus:
     host: ${MILVUS_HOST:localhost}
     port: ${MILVUS_PORT:19530}

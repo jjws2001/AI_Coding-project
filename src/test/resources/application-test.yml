@@ -35,6 +35,10 @@ ai:
     store: in-memory
     max-results: 3
     min-score: 0.5
+    large-file-lines: 400
+    chunk-size-lines: 200
+    chunk-overlap-lines: 30
+    embedding-batch-size: 64
   sandbox:
     enabled: false
 

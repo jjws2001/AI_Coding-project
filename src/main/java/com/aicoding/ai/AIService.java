@@ -6,23 +6,16 @@ import com.aicoding.ai.harness.HarnessPolicyEngine;
 import com.aicoding.ai.harness.HarnessRuntimeRegistry;
 import com.aicoding.ai.prompt.DynamicPromptService;
 import com.aicoding.ai.rag.ProjectEmbeddingStoreRegistry;
-import dev.langchain4j.data.document.Document;
-import dev.langchain4j.data.document.DocumentSplitter;
-import dev.langchain4j.data.document.loader.FileSystemDocumentLoader;
+import com.aicoding.ai.rag.ProjectRagIndexer;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.PathMatcher;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -31,8 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 public class AIService {
 
-    private final EmbeddingModel embeddingModel;
-    private final DocumentSplitter documentSplitter;
+    private final ProjectRagIndexer ragIndexer;
     private final ProjectEmbeddingStoreRegistry embeddingStoreRegistry;
     private final AiServiceFactory aiServiceFactory;
     private final GuardrailsFilter guardrailsFilter;
@@ -45,22 +37,18 @@ public class AIService {
     @Transactional(readOnly = true)
     public void indexProject(Long projectId) {
         Path projectRoot = projectService.getProjectRootPath(projectId);
-        List<Document> documents = loadProjectDocuments(projectRoot);
-        if (documents.isEmpty()) {
+        List<TextSegment> segments = ragIndexer.load(projectRoot);
+        if (segments.isEmpty()) {
             log.warn("No indexable documents found for project {}", projectId);
             return;
         }
 
         EmbeddingStore<TextSegment> projectStore = embeddingStoreRegistry.reset(projectId);
-        EmbeddingStoreIngestor.builder()
-                .documentSplitter(documentSplitter)
-                .embeddingModel(embeddingModel)
-                .embeddingStore(projectStore)
-                .build()
-                .ingest(documents);
+        ProjectRagIndexer.IndexingResult result = ragIndexer.index(projectId, segments, projectStore);
 
         aiServiceFactory.evictAssistant(projectId);
-        log.info("Indexed {} documents for project {}", documents.size(), projectId);
+        log.info("Indexed {} files as {} structured chunks for project {}",
+                result.files(), result.chunks(), projectId);
     }
 
     public String chat(Long projectId, String userMessage, String sessionId) {
@@ -122,34 +110,4 @@ public class AIService {
                 promptService.enrichUserMessage(projectId, sessionId, request)));
     }
 
-    private List<Document> loadProjectDocuments(Path projectRoot) {
-        Path normalizedRoot = projectRoot.toAbsolutePath().normalize();
-        return FileSystemDocumentLoader.loadDocuments(projectRoot, (PathMatcher) path -> {
-            String normalized = path.toString().replace('\\', '/').toLowerCase();
-            return isSafeIndexPath(path, normalizedRoot)
-                    && !normalized.contains("/node_modules/")
-                    && !normalized.contains("/.git/")
-                    && !normalized.contains("/target/")
-                    && !normalized.contains("/build/")
-                    && isIndexable(normalized);
-        });
-    }
-
-    private boolean isSafeIndexPath(Path path, Path normalizedRoot) {
-        try {
-            return !Files.isSymbolicLink(path)
-                    && path.toAbsolutePath().normalize().startsWith(normalizedRoot)
-                    && path.toRealPath().startsWith(normalizedRoot.toRealPath());
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
-    private boolean isIndexable(String path) {
-        return path.endsWith(".java") || path.endsWith(".kt")
-                || path.endsWith(".ts") || path.endsWith(".tsx")
-                || path.endsWith(".js") || path.endsWith(".jsx")
-                || path.endsWith(".py") || path.endsWith(".go")
-                || path.endsWith(".md");
-    }
 }

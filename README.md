@@ -6,7 +6,7 @@
 
 - **云端代码资产**：GitHub OAuth2 登录、仓库导入、JGit 同步、MinIO 备份、Monaco Editor 与 WebSocket 协同更新。
 - **项目级 Agent**：用 `ConcurrentHashMap<Long, AiCodingAssistant>` 缓存每个项目的定制 Assistant，组装文件、代码分析、Git、记忆和沙箱工具。
-- **RAG 索引**：代码文件批量加载、递归切片、Embedding 摄入；每个项目独立 collection，摄入与检索共享同一 `EmbeddingStore`。
+- **RAG 索引**：按全限定类名、文件名和分片号建立结构化代码标识，按行切分大型文件并批量摄入；每个项目独立 collection，摄入与检索共享同一 `EmbeddingStore`。
 - **Prompt / Context Engineering**：Markdown 模块化 System Prompt、Skills 渐进式披露、RAG 按需召回、三层上下文压缩与 JPA 长期记忆。
 - **Harness Engineering**：工作区边界、写入前 Hook、沙箱验证、运行审计和定时 HEARTBEAT，降低 Agent 越权与“改完不验证”的风险。
 - **LLM 稳定性治理**：公平信号量、带 TTL 的优先队列、指数退避重试、熔断器和有界 DLQ。
@@ -55,9 +55,11 @@ GitHub OAuth2 登录成功后，平台持久化用户信息和访问令牌；导
 
 ### 2. 索引与向量检索
 
-`AIService#indexProject` 扫描项目内 Java、Kotlin、JS/TS、Python、Go 和 Markdown 文件，拒绝符号链接及工作区外路径，并忽略 `.git`、`node_modules`、`target`、`build`。文档经 `DocumentSplitters.recursive(500, 50)` 切片后批量生成向量，写入项目独立的 EmbeddingStore；重建索引后会驱逐旧 Assistant，确保 Retriever 绑定新 Store。
+`AIService#indexProject` 扫描项目内 Java、Kotlin、JS/TS、Python、Go 和 Markdown 文件，拒绝符号链接及工作区外路径，并忽略 `.git`、`.idea`、`node_modules`、`target`、`build`、`dist` 和 `out`。`ProjectCodeChunker` 从 Java/Kotlin `package` 和文件名构造全限定类名，其他语言使用相对模块路径；普通文件生成 `全限定类名|文件名` 逻辑键，超过 400 行的大文件生成 `全限定类名|文件名|chunk-0001` 形式的分片键。
 
-默认使用内存向量库便于本地演示；启用 `milvus` Profile 后，每个项目创建 `project_{projectId}` collection，底层索引为 **HNSW**，距离度量为 **COSINE**，一致性级别为 `BOUNDED`。当前默认 Embedding 模型是 `text-embedding-3-small`，维度为 1536；切换模型时必须同步调整 `ai.milvus.dimension` 并重建 collection。
+大型文件按 200 行切片，相邻分片重叠 30 行，避免方法或类定义刚好落在边界时丢失上下文；末段不足 100 行时并入上一段，减少低信息碎片。逻辑键、文件路径、起止行号等字段同时写入待向量化文本前缀和 `Metadata`，Embedding 以 64 段为一批生成，再使用 `projectId + 逻辑键 + 文件路径` 派生稳定 UUID 作为向量库物理主键。重建索引后会驱逐旧 Assistant，确保 Retriever 绑定新 Store。
+
+默认使用内存向量库便于本地演示；启用 `milvus` Profile 后，每个项目创建 `project_{projectId}` collection，底层索引为 **HNSW**，距离度量为 **COSINE**，一致性级别为 `BOUNDED`。HNSW 对查询向量执行近邻检索，字符串逻辑键不参与图距离计算；把逻辑键放入 Embedding 文本可增强类名和文件名命中，Metadata 则用于结果定位和解释。当前默认 Embedding 模型是 `text-embedding-3-small`，维度为 1536；切换模型时必须同步调整 `ai.milvus.dimension` 并重建 collection。
 
 ### 3. Agent 与 Prompt 组装
 
@@ -98,7 +100,7 @@ src/main/java/com/aicoding/
     harness/                           Workspace、验证 Hook、HEARTBEAT
     memory/                            分层上下文与长期记忆
     prompt/                            Prompt 模块与 Skills 加载
-    rag/                               项目级 EmbeddingStore 注册表
+    rag/                               结构化代码切片、批量摄入与项目级 Store
     tools/                             Agent 工具集合
 src/main/resources/agent/              Markdown Prompt 与 Skills
 src/milvus/java/                       可选 Milvus 实现
