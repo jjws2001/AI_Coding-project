@@ -31,6 +31,22 @@ flowchart LR
     API --> PG["PostgreSQL"]
 ```
 
+## 运行界面（早期 Demo）
+
+以下截图来自项目早期可运行版本，用于展示 GitHub 登录与项目导入、Monaco 云端编辑器和 AI Chat 的完整交互链路。本次版本升级主要集中在后端 Agent、RAG、上下文治理、Harness 和并发稳定性，前端核心工作流未发生结构性变化；截图不代表新增后台能力已经全部可视化。
+
+### GitHub 登录与项目导入
+
+<img width="2441" height="1415" alt="GitHub 登录后的项目导入页面" src="https://github.com/user-attachments/assets/18c8bf21-4bca-4c4a-bb70-ca07737be8f1" />
+
+### 项目文件与 Monaco 编辑器
+
+<img width="2481" height="1380" alt="导入示例项目后的 Monaco 编辑器" src="https://github.com/user-attachments/assets/b27ce4ad-d96b-4ee6-9a84-f8e26e423995" />
+
+### 代码编辑与 AI Chat
+
+<img width="2538" height="1473" alt="代码编辑和 AI Chat 界面" src="https://github.com/user-attachments/assets/ec254b9a-73d2-4db0-9561-d303eee2d8dd" />
+
 ## 关键业务链路
 
 ### 1. 登录、导入与工作区
