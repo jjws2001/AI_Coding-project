@@ -137,10 +137,14 @@ public class StorageServiceImpl implements StorageService {
     }
 
     private void unzipDirectory(Path zipPath, Path destDir) throws IOException {
+        Path normalizedDestination = destDir.toAbsolutePath().normalize();
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipPath))){
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                Path newPath = destDir.resolve(entry.getName());
+                Path newPath = normalizedDestination.resolve(entry.getName()).normalize();
+                if (!newPath.startsWith(normalizedDestination)) {
+                    throw new IOException("Backup contains an invalid path: " + entry.getName());
+                }
                 if (entry.isDirectory()) {
                     Files.createDirectories(newPath);
                 } else {

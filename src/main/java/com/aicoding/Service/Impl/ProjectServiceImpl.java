@@ -426,13 +426,15 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     public Path getProjectRootPath(Long projectId) {
         Project project = getProjectById(projectId);
+        Path workspaceRoot = Paths.get(workspaceBasePath).toAbsolutePath().normalize();
+        Path projectRoot = hasUsableLocalPath(project.getLocalPath())
+                ? Paths.get(project.getLocalPath()).toAbsolutePath().normalize()
+                : buildWorkspaceProjectPath(project.getUser().getId(), projectId).toAbsolutePath().normalize();
 
-        if (hasUsableLocalPath(project.getLocalPath())) {
-            return Paths.get(project.getLocalPath()).toAbsolutePath().normalize();
+        if (!projectRoot.startsWith(workspaceRoot)) {
+            throw new ProjectException("Project workspace is outside the configured workspace root");
         }
-
-        // 濡傛灉鏁版嵁搴撲腑娌℃湁淇濆瓨璺緞锛屼娇鐢ㄩ粯璁よ矾寰?
-        return buildWorkspaceProjectPath(project.getUser().getId(), projectId);
+        return projectRoot;
     }
 
     @Override

@@ -1,4 +1,9 @@
 HELP.md
+# 忽略所有以 application 开头的 YAML/YML 配置文件
+src/main/resources/application*.yaml
+src/main/resources/application*.yml
+!src/main/resources/application-example.yml
+.mvn-repo/
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { getUserProjects, importProjectFromGitHub, uploadProject } from "../api/projects";
-import type { AuthUser, Project, ProjectDTO } from "../types";
+import type { AuthUser, ProjectDTO } from "../types";
 
 interface ProjectImportPageProps {
   user: AuthUser;
-  onProjectReady: (project: Pick<Project, "id" | "name">) => void;
+  onProjectReady: (project: Pick<ProjectDTO, "id" | "name">) => void;
   onLogout: () => void;
 }
 

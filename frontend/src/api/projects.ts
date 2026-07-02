@@ -1,4 +1,4 @@
-import type { FileTreeNode, Project, ProjectDTO } from "../types";
+import type { FileTreeNode, ProjectDTO } from "../types";
 import { normalizeFilePath, request } from "./client";
 
 export async function getUserProjects(): Promise<ProjectDTO[]> {
@@ -11,7 +11,7 @@ interface UploadPayload {
   githubRepo?: string;
 }
 
-export async function uploadProject(payload: UploadPayload): Promise<Project> {
+export async function uploadProject(payload: UploadPayload): Promise<ProjectDTO> {
   const formData = new FormData();
   formData.append("name", payload.name);
   formData.append("file", payload.file);
@@ -19,16 +19,16 @@ export async function uploadProject(payload: UploadPayload): Promise<Project> {
     formData.append("githubRepo", payload.githubRepo);
   }
 
-  return request<Project>("/api/projects/upload", {
+  return request<ProjectDTO>("/api/projects/upload", {
     method: "POST",
     body: formData
   });
 }
 
-export async function importProjectFromGitHub(githubRepo: string): Promise<Project> {
+export async function importProjectFromGitHub(githubRepo: string): Promise<ProjectDTO> {
   const formData = new FormData();
   formData.append("githubRepo", githubRepo);
-  return request<Project>("/api/projects/import/github", {
+  return request<ProjectDTO>("/api/projects/import/github", {
     method: "POST",
     body: formData
   });

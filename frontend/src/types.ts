@@ -26,18 +26,6 @@ export interface ProjectDTO {
   totalSize?: number;
 }
 
-export interface Project {
-  id: number;
-  name: string;
-  description?: string;
-  localPath?: string;
-  githubRepoUrl?: string;
-  githubRepoName?: string;
-  status: "INITIALIZING" | "ACTIVE" | "ARCHIVED" | "ERROR";
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export interface FileTreeNode {
   name: string;
   path: string;

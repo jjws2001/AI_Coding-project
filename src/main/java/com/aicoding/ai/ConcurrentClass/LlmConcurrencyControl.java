@@ -8,7 +8,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 限制对 LLM API 的并发调用（信号量 + 看门狗）
@@ -77,6 +76,11 @@ public class LlmConcurrencyControl {
         }
     }
 
+    /** Returns a permit acquired before a request could be registered. */
+    public void releaseUnusedPermit() {
+        semaphore.release();
+    }
+
     /**
      * Watchdog logic: Force release permits for timed-out requests
      */
@@ -87,7 +91,10 @@ public class LlmConcurrencyControl {
         activeRequests.forEach((id, req) -> {
             if (now - req.startTime > timeoutMillis) {
                 log.warn("Watchdog: Request {} timed out ({}ms). Forcing release.", id, now - req.startTime);
-                // Trigger cancellation callback (to notify the handler)
+                if (!activeRequests.remove(id, req)) {
+                    return;
+                }
+                semaphore.release();
                 if (req.cancelCallback != null) {
                     try {
                         req.cancelCallback.run();
@@ -95,9 +102,6 @@ public class LlmConcurrencyControl {
                         log.error("Error executing cancel callback for {}", id, e);
                     }
                 }
-                // Force release (semaphore logic handled in release() method called by callback or directly here)
-                // We call release() to ensure permit is returned
-                release(id);
             }
         });
     }
@@ -110,5 +114,9 @@ public class LlmConcurrencyControl {
 
     public int getQueueLength() {
         return semaphore.getQueueLength();
+    }
+
+    public int getActiveRequestCount() {
+        return activeRequests.size();
     }
 }

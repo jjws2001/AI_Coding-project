@@ -1,0 +1,84 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/aicode
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: ${DB_PASSWORD:your_password}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: ${GITHUB_CLIENT_ID:}
+            client-secret: ${GITHUB_CLIENT_SECRET:}
+            scope: read:user,user:email,repo
+
+app:
+  oauth2:
+    redirect-uri: ${APP_OAUTH2_REDIRECT_URI:http://localhost:3000}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+
+workspace:
+  base-path: ${WORKSPACE_BASE_PATH:./workspace}
+  backup-cron: '${WORKSPACE_BACKUP_CRON:0 0 3 * * ?}'
+
+guardrails:
+  patterns: '${GUARDRAIL_PATTERNS:(?i)(api[_-]?key|token|secret)\\s*[:=]\\s*\\S+}'
+
+ai:
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-4.1-mini}
+    embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    temperature: 0.2
+    max-tokens: 4000
+    timeout: 60
+    log-requests: false
+    log-responses: false
+  rag:
+    # Use in-memory for a zero-dependency demo. Build with -Pmilvus for Milvus.
+    store: ${AI_RAG_STORE:in-memory}
+    max-results: 6
+    min-score: 0.65
+  milvus:
+    host: ${MILVUS_HOST:localhost}
+    port: ${MILVUS_PORT:19530}
+    dimension: 1536
+  context:
+    max-messages: 20
+    max-tool-result-chars: 6000
+    max-summary-chars: 5000
+  harness:
+    max-write-bytes: 1048576
+    allow-delete: false
+    heartbeat-interval-ms: 15000
+    stale-run-seconds: 180
+  sandbox:
+    enabled: ${SANDBOX_ENABLED:false}
+    base-url: ${SANDBOX_BASE_URL:http://localhost:8080}
+    execute-path: /api/sandbox/execute
+    verify-path: /api/sandbox/verify
+    timeout-seconds: 120
+    max-retries: 3
+    retry-delay-ms: 500
+  llm:
+    max-concurrency: 3
+    request-timeout: 60
+    queue-ttl-seconds: 120
+    max-retries: 3
+    retry-base-delay-ms: 500
+    retry-max-delay-ms: 8000
+    circuit-failure-threshold: 5
+    circuit-open-seconds: 30
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket-name: ${MINIO_BUCKET:aicode-projects}

@@ -20,28 +20,33 @@ public class AIConfig {
     @Value("${ai.openai.api-key}")
     private String openaiApiKey;
 
-    @Value("${ai.openai.model:gpt-4-turbo-preview}")
+    @Value("${ai.openai.model:gpt-4.1-mini}")
     private String openaiModel;
+
+    @Value("${ai.openai.embedding-model:text-embedding-3-small}")
+    private String embeddingModel;
 
     @Value("${ai.openai.base-url}")
     private String openaiBaseUrl;
 
-    @Value("${ai.openai.temperature:0.7}")
+    @Value("${ai.openai.temperature:0.2}")
     private Double temperature;
 
-    @Value("${ai.openai.max-tokens:2000}")
+    @Value("${ai.openai.max-tokens:4000}")
     private Integer maxTokens;
 
     @Value("${ai.openai.timeout:60}")
     private Integer timeoutSeconds;
 
-    /**
-     * OpenAI 聊天模型（同步）
-     */
+    @Value("${ai.openai.log-requests:false}")
+    private boolean logRequests;
+
+    @Value("${ai.openai.log-responses:false}")
+    private boolean logResponses;
+
     @Bean
     public ChatModel openAiChatModel() {
-        log.info("Initializing OpenAI Chat Model: {}", openaiModel);
-
+        log.info("Initializing chat model {}", openaiModel);
         return OpenAiChatModel.builder()
                 .apiKey(openaiApiKey)
                 .baseUrl(openaiBaseUrl)
@@ -49,40 +54,32 @@ public class AIConfig {
                 .temperature(temperature)
                 .maxTokens(maxTokens)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
-                .logRequests(true)
-                .logResponses(true)
+                .logRequests(logRequests)
+                .logResponses(logResponses)
                 .build();
     }
 
-    /**
-     * OpenAI 流式聊天模型
-     */
     @Bean
     public StreamingChatModel openAiStreamingChatModel() {
-        log.info("Initializing OpenAI Streaming Chat Model: {}", openaiModel);
-
+        log.info("Initializing streaming chat model {}", openaiModel);
         return OpenAiStreamingChatModel.builder()
                 .apiKey(openaiApiKey)
                 .baseUrl(openaiBaseUrl)
                 .modelName(openaiModel)
                 .temperature(temperature)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
-                .logRequests(true)
-                .logResponses(true)
+                .logRequests(logRequests)
+                .logResponses(logResponses)
                 .build();
     }
 
-    /**
-     * OpenAI 嵌入模型
-     */
     @Bean
     public EmbeddingModel openAiEmbeddingModel() {
-        log.info("Initializing OpenAI Embedding Model");
-
+        log.info("Initializing embedding model {}", embeddingModel);
         return OpenAiEmbeddingModel.builder()
                 .apiKey(openaiApiKey)
                 .baseUrl(openaiBaseUrl)
-                .modelName("text-embedding-3-small")
+                .modelName(embeddingModel)
                 .timeout(Duration.ofSeconds(timeoutSeconds))
                 .build();
     }
