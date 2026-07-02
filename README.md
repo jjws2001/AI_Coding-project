@@ -28,7 +28,7 @@ flowchart LR
     QUEUE --> LLM["OpenAI-compatible Chat API"]
     TOOLS --> HARNESS["Workspace Guard + Verification Hooks"]
     HARNESS --> SANDBOX["External Sandbox Gateway"]
-    API --> PG["PostgreSQL"]
+    API --> MYSQL["MySQL 8"]
 ```
 
 ## 运行界面（Demo）
@@ -65,7 +65,7 @@ GitHub OAuth2 登录成功后，平台持久化用户信息和访问令牌；导
 
 ### 4. 上下文与记忆
 
-短期记忆按 `projectId + sessionId` 隔离，并采用三层压缩：L1 截断超长工具结果，保留头尾证据；L2 超过消息阈值后把旧轮次压缩为确定性摘要；L3 提供显式 compact 接口。长期记忆以 `AgentMemory` 存入 PostgreSQL，按项目、类型、更新时间和查询关键词召回，用于保存项目事实、用户偏好、错误经验和关键决策。
+短期记忆按 `projectId + sessionId` 隔离，并采用三层压缩：L1 截断超长工具结果，保留头尾证据；L2 超过消息阈值后把旧轮次压缩为确定性摘要；L3 提供显式 compact 接口。长期记忆以 `AgentMemory` 存入 MySQL，按项目、类型、更新时间和查询关键词召回，用于保存项目事实、用户偏好、错误经验和关键决策。
 
 ### 5. 工具调用与 Harness
 
@@ -81,10 +81,10 @@ Agent 的文件写入先经过 `WorkspaceGuard`：拒绝绝对路径、`..` 穿�
 | --- | --- |
 | 后端 | Java 21、Spring Boot 3.4、Spring MVC、WebSocket/STOMP |
 | AI | LangChain4j 1.1、OpenAI-compatible Chat/Embedding API、Project RAG |
-| 数据 | Spring Data JPA、Hibernate、PostgreSQL、Milvus、MinIO |
+| 数据 | Spring Data JPA、Hibernate、MySQL 8、Milvus、MinIO |
 | 安全与代码 | Spring Security OAuth2 Client、JGit、Workspace Guard、Sandbox Gateway |
 | 前端 | React 18、TypeScript、Vite、Monaco Editor |
-| 测试 | JUnit 5、Spring Boot Test、H2 PostgreSQL mode |
+| 测试 | JUnit 5、Spring Boot Test、H2 MySQL mode |
 
 ## 目录说明
 
@@ -116,20 +116,32 @@ src/milvus/java/                       可选 Milvus 实现
 
 ### 1. 启动基础设施
 
+本机已经运行 MySQL 时，只启动 Agent 依赖的 MinIO、etcd 和 Milvus，避免容器占用本机 `3306`：
+
 ```bash
-docker compose -f src/main/resources/docker-compose.yml up -d postgres minio etcd milvus
+docker compose -f src/main/resources/docker-compose.yml up -d minio etcd milvus
+```
+
+没有本机 MySQL 时，可启用 Compose 的 `database` Profile，一次启动 MySQL 8 和其余基础设施：
+
+```bash
+docker compose -f src/main/resources/docker-compose.yml --profile database up -d
 ```
 
 ### 2. 准备本地配置
 
-将 `src/main/resources/application-example.yml` 复制为被 Git 忽略的 `application-local.yml`，至少配置以下环境变量：
+仓库中的 `application.yaml` 已使用环境变量，不包含真实密码。至少配置：
 
 ```bash
+DB_URL=jdbc:mysql://127.0.0.1:3306/aicode?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+DB_USERNAME=root
 DB_PASSWORD=your_password
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 OPENAI_API_KEY=your_api_key
 ```
+
+若本机 MySQL 还没有数据库，可先执行 `CREATE DATABASE aicode CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`，也可以保留默认 URL 中的 `createDatabaseIfNotExist=true`，前提是数据库账号具有建库权限。
 
 GitHub OAuth App 的本地回调地址应为：
 

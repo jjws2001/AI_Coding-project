@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/aicode
-    driver-class-name: org.postgresql.Driver
-    username: postgres
+    url: '${DB_URL:jdbc:mysql://127.0.0.1:3306/aicode?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}'
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:your_password}
   jpa:
     open-in-view: false
@@ -28,7 +28,7 @@ workspace:
   backup-cron: '${WORKSPACE_BACKUP_CRON:0 0 3 * * ?}'
 
 guardrails:
-  patterns: '${GUARDRAIL_PATTERNS:(?i)(api[_-]?key|token|secret)\\s*[:=]\\s*\\S+}'
+  patterns: '${GUARDRAIL_PATTERNS:(?i)(api[_-]?key|token|secret)\s*[:=]\s*\S+}'
 
 ai:
   openai:
@@ -42,7 +42,6 @@ ai:
     log-requests: false
     log-responses: false
   rag:
-    # Use in-memory for a zero-dependency demo. Build with -Pmilvus for Milvus.
     store: ${AI_RAG_STORE:in-memory}
     max-results: 6
     min-score: 0.65
@@ -78,7 +77,7 @@ ai:
     circuit-open-seconds: 30
 
 minio:
-  endpoint: http://localhost:9000
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   bucket-name: ${MINIO_BUCKET:aicode-projects}
