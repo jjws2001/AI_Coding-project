@@ -1,26 +1,15 @@
 spring:
   application:
     name: ai-coding-platform
-
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/{your-db-name}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-    username: {your-username}
-    password: {your-password}
+    url: '${DB_URL:jdbc:mysql://127.0.0.1:3306/aicode?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}'
     driver-class-name: com.mysql.cj.jdbc.Driver
-
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
   security:
     oauth2:
       client:
@@ -28,16 +17,7 @@ spring:
           github:
             client-id: ${GITHUB_CLIENT_ID:}
             client-secret: ${GITHUB_CLIENT_SECRET:}
-            scope:
-              - user:email
-              - repo
-              - read:user
-            redirect-uri: ${GITHUB_REDIRECT_URI:{baseUrl}/login/oauth2/code/{registrationId}}
-        provider:
-          github:
-            authorization-uri: https://github.com/login/oauth/authorize
-            token-uri: https://github.com/login/oauth/access_token
-            user-info-uri: https://api.github.com/user
+            scope: read:user,user:email,repo
 
 server:
   forward-headers-strategy: framework
@@ -46,37 +26,63 @@ app:
   oauth2:
     redirect-uri: ${APP_OAUTH2_REDIRECT_URI:http://localhost:3000}
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://sulr.cc.cd,https://sulr.cc.cd}
-
-minio:
-  endpoint: http://localhost:9000
-  access-key: minioadmin
-  secret-key: minioadmin
-  bucket-name: aicode-projects
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
 
 workspace:
-  base-path: ${WORKSPACE_BASE_PATH:/var/aicode/workspace}
-  backup-cron: "0 */30 * * * *"
+  base-path: ${WORKSPACE_BASE_PATH:./workspace}
+  backup-cron: '${WORKSPACE_BACKUP_CRON:0 0 3 * * ?}'
+
+guardrails:
+  patterns: '${GUARDRAIL_PATTERNS:(?i)(api[_-]?key|token|secret)\s*[:=]\s*\S+}'
 
 ai:
   openai:
-    api-key: {your-apikey}
-    model: {select-your-model-which-is-suported-openai}
-    base-url: {your-model-base-url}
-  openclaw:
-    endpoint: http://localhost:18789
-  chroma:
-    url: http://localhost:8001
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-4.1-mini}
+    embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    temperature: 0.2
+    max-tokens: 4000
+    timeout: 60
+    log-requests: false
+    log-responses: false
+  rag:
+    store: ${AI_RAG_STORE:in-memory}
+    max-results: 6
+    min-score: 0.65
+  milvus:
+    host: ${MILVUS_HOST:localhost}
+    port: ${MILVUS_PORT:19530}
+    dimension: 1536
+  context:
+    max-messages: 20
+    max-tool-result-chars: 6000
+    max-summary-chars: 5000
+  harness:
+    max-write-bytes: 1048576
+    allow-delete: false
+    heartbeat-interval-ms: 15000
+    stale-run-seconds: 180
+  sandbox:
+    enabled: ${SANDBOX_ENABLED:false}
+    base-url: ${SANDBOX_BASE_URL:http://localhost:8080}
+    execute-path: /api/sandbox/execute
+    verify-path: /api/sandbox/verify
+    timeout-seconds: 120
+    max-retries: 3
+    retry-delay-ms: 500
   llm:
     max-concurrency: 3
     request-timeout: 60
-    retry:
-      max-attempts: 3
-      backoff-factor: 2.0
-      initial-delay: 1000ms
-  chat-memory:
-    max-messages: 10
+    queue-ttl-seconds: 120
+    max-retries: 3
+    retry-base-delay-ms: 500
+    retry-max-delay-ms: 8000
+    circuit-failure-threshold: 5
+    circuit-open-seconds: 30
 
-guardrails:
-  enabled: true
-  patterns: ".*api[_-]?key.*,.*password.*,.*secret.*,.*token.*"
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket-name: ${MINIO_BUCKET:aicode-projects}

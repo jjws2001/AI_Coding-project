@@ -1,20 +1,20 @@
 services:
-  postgres:
-    image: postgres:16
-    container_name: aicode-postgres
+  mysql:
+    image: mysql:8.4
+    container_name: aicode-mysql
+    profiles: ["database"]
     environment:
-      POSTGRES_DB: aicode
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-your_password}
+      MYSQL_DATABASE: aicode
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-your_password}
     ports:
-      - "5432:5432"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d aicode"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   minio:
     image: minio/minio:latest
@@ -63,7 +63,7 @@ services:
       - milvus_data:/var/lib/milvus
 
 volumes:
-  postgres_data:
+  mysql_data:
   minio_data:
   etcd_data:
   milvus_data:
