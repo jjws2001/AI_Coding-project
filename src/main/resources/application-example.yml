@@ -48,6 +48,15 @@ ai:
     store: ${AI_RAG_STORE:in-memory}
     max-results: 6
     min-score: 0.65
+    dense-candidates: 18
+    symbol-candidates: 18
+    rrf-k: 60
+    dense-weight: 1.0
+    symbol-weight: 1.2
+    large-file-lines: 400
+    chunk-size-lines: 200
+    chunk-overlap-lines: 30
+    embedding-batch-size: 64
   milvus:
     host: ${MILVUS_HOST:localhost}
     port: ${MILVUS_PORT:19530}

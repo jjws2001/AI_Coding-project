@@ -6,7 +6,7 @@
 
 - **云端代码资产**：GitHub OAuth2 登录、仓库导入、JGit 同步、MinIO 备份、Monaco Editor 与 WebSocket 协同更新。
 - **项目级 Agent**：用 `ConcurrentHashMap<Long, AiCodingAssistant>` 缓存每个项目的定制 Assistant，组装文件、代码分析、Git、记忆和沙箱工具。
-- **RAG 索引**：代码文件递归切片、硅基流动 `Qwen/Qwen3-VL-Embedding-8B` 4096 维向量摄入；每个项目独立 Store，摄入与检索共享同一 `EmbeddingStore`。
+- **混合 RAG**：按全限定类名、文件名和分片号建立结构化代码标识，以硅基流动 `Qwen/Qwen3-VL-Embedding-8B` 生成 4096 维向量；Milvus Dense/HNSW 与 Lucene BM25 符号召回并行执行，再通过 RRF 融合文件名、类名、方法名和语义结果。
 - **Prompt / Context Engineering**：Markdown 模块化 System Prompt、Skills 渐进式披露、RAG 按需召回、三层上下文压缩与 JPA 长期记忆。
 - **Harness Engineering**：工作区边界、写入前 Hook、沙箱验证、运行审计和定时 HEARTBEAT，降低 Agent 越权与“改完不验证”的风险。
 - **LLM 稳定性治理**：公平信号量、带 TTL 的优先队列、指数退避重试、熔断器和有界 DLQ。
@@ -55,9 +55,13 @@ GitHub OAuth2 登录成功后，平台持久化用户信息和访问令牌；导
 
 ### 2. 索引与向量检索
 
-`AIService#indexProject` 扫描项目内 Java、Kotlin、JS/TS、Python、Go 和 Markdown 文件，拒绝符号链接及工作区外路径，并忽略 `.git`、`node_modules`、`target`、`build`。文档经 `DocumentSplitters.recursive(500, 50)` 切片后批量生成向量，写入项目独立的 EmbeddingStore；重建索引后会驱逐旧 Assistant，确保 Retriever 绑定新 Store。
+`AIService#indexProject` 扫描项目内 Java、Kotlin、JS/TS、Python、Go 和 Markdown 文件，拒绝符号链接及工作区外路径，并忽略 `.git`、`.idea`、`node_modules`、`target`、`build`、`dist` 和 `out`。`ProjectCodeChunker` 从 Java/Kotlin `package` 和文件名构造全限定类名，其他语言使用相对模块路径；普通文件生成 `全限定类名|文件名` 逻辑键，超过 400 行的大文件生成 `全限定类名|文件名|chunk-0001` 形式的分片键。
 
-默认使用内存向量库便于本地演示；启用 `milvus` Profile 后，每个项目创建 `project_{projectId}_d{dimension}` collection，底层索引为 **HNSW**，距离度量为 **COSINE**，一致性级别为 `BOUNDED`。当前默认 Embedding 模型为硅基流动 `Qwen/Qwen3-VL-Embedding-8B`，维度为 4096；Embedding 的 Key、Base URL、模型和维度均可与聊天模型独立配置。切换维度会自动落到新 collection，不能复用已有的 1536 维 collection。
+大型文件按 200 行切片，相邻分片重叠 30 行，避免方法或类定义刚好落在边界时丢失上下文；末段不足 100 行时并入上一段，减少低信息碎片。逻辑键、文件路径、起止行号等字段同时写入待向量化文本前缀和 `Metadata`，Embedding 以 64 段为一批生成，再使用 `projectId + 逻辑键 + 文件路径` 派生稳定 UUID 作为向量库物理主键。重建索引后会驱逐旧 Assistant，确保 Retriever 绑定新 Store。
+
+默认使用内存向量库便于本地演示；启用 `milvus` Profile 后，每个项目创建 `project_{projectId}_d{dimension}` collection，底层索引为 **HNSW**，距离度量为 **COSINE**，一致性级别为 `BOUNDED`。当前默认 Embedding 模型为硅基流动 `Qwen/Qwen3-VL-Embedding-8B`，维度为 4096；Embedding 的 Key、Base URL、模型和维度均可与聊天模型独立配置。切换维度会自动落到新 collection，不能复用已有的 1536 维 collection。HNSW 对查询向量执行近邻检索，字符串逻辑键不参与图距离计算；把逻辑键放入 Embedding 文本可增强类名和文件名命中，Metadata 则用于结果定位和解释。
+
+查询阶段由 `HybridCodeContentRetriever` 并行取得 18 个 Dense 候选和 18 个 Lucene 候选。Lucene 项目级内存索引使用 BM25，并对文件名、全限定类名、方法/函数名的精确、前缀、后缀及轻量拼写纠错匹配加权；两路排名使用加权 RRF 融合，默认 Dense 权重 1.0、Symbol 权重 1.2，Symbol 权重再按 Lucene 原始得分缩放，避免普通英文词命中压过高质量语义结果，去重后返回 6 个片段。符号索引可从 Workspace 懒加载，Embedding 服务异常但符号命中时可以降级返回代码片段。
 
 ### 3. Agent 与 Prompt 组装
 
@@ -98,7 +102,7 @@ src/main/java/com/aicoding/
     harness/                           Workspace、验证 Hook、HEARTBEAT
     memory/                            分层上下文与长期记忆
     prompt/                            Prompt 模块与 Skills 加载
-    rag/                               项目级 EmbeddingStore 注册表
+    rag/                               结构化切片、Dense/Symbol 索引与 RRF 混合召回
     tools/                             Agent 工具集合
 src/main/resources/agent/              Markdown Prompt 与 Skills
 src/milvus/java/                       可选 Milvus 实现
@@ -218,7 +222,7 @@ docker compose -f src/main/resources/docker-compose.yml config
 ## 当前边界
 
 - 默认内存向量库不持久化，生产或多实例部署应启用 Milvus。
-- 当前代码 RAG 使用递归文本切片和 Dense Vector Retrieval；尚未实现按全限定类名/文件名的结构化切片、Lucene BM25 或 Dense + Symbol 混合召回。
+- 当前代码已使用基于全限定类名、文件名和行窗口的结构化切片，以及 Dense + Lucene BM25 混合召回；尚未实现 AST/Tree-sitter 符号级切分、文件级增量索引或跨实例持久化符号索引。
 - LLM 请求队列与 DLQ 当前位于单 JVM 内，实例重启会丢失；需要跨实例恢复时可替换为 Kafka/RabbitMQ 等持久化消息系统。
 - 长期记忆使用轻量关键词评分，不等同于语义记忆检索。
 - Sandbox Gateway 是外部依赖，禁用时验证结果会明确标记为 `SKIPPED`，不会伪装成通过。

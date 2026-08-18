@@ -1,9 +1,13 @@
 package com.aicoding.ai;
 
+import com.aicoding.Service.ProjectService;
 import com.aicoding.ai.ConcurrentClass.ConcurrentChatModel;
 import com.aicoding.ai.memory.ChatMemoryRegistry;
 import com.aicoding.ai.prompt.DynamicPromptService;
+import com.aicoding.ai.rag.HybridCodeContentRetriever;
 import com.aicoding.ai.rag.ProjectEmbeddingStoreRegistry;
+import com.aicoding.ai.rag.ProjectRagIndexer;
+import com.aicoding.ai.rag.ProjectSymbolIndexRegistry;
 import com.aicoding.ai.tools.CodeAnalysisTool;
 import com.aicoding.ai.tools.FileOperationTool;
 import com.aicoding.ai.tools.GitOperationTool;
@@ -11,6 +15,7 @@ import com.aicoding.ai.tools.MemoryTool;
 import com.aicoding.ai.tools.SandboxExecutionTool;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.service.AiServices;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +34,9 @@ public class AiServiceFactory {
     private final ConcurrentChatModel concurrentChatModel;
     private final EmbeddingModel embeddingModel;
     private final ProjectEmbeddingStoreRegistry embeddingStoreRegistry;
+    private final ProjectSymbolIndexRegistry symbolIndexRegistry;
+    private final ProjectRagIndexer ragIndexer;
+    private final ProjectService projectService;
     private final DynamicPromptService promptService;
     private final ChatMemoryRegistry chatMemoryRegistry;
     private final FileOperationTool fileOperationTool;
@@ -44,6 +52,21 @@ public class AiServiceFactory {
 
     @Value("${ai.rag.min-score:0.7}")
     private Double minScore;
+
+    @Value("${ai.rag.dense-candidates:18}")
+    private Integer denseCandidates;
+
+    @Value("${ai.rag.symbol-candidates:18}")
+    private Integer symbolCandidates;
+
+    @Value("${ai.rag.rrf-k:60}")
+    private Integer rrfK;
+
+    @Value("${ai.rag.dense-weight:1.0}")
+    private Double denseWeight;
+
+    @Value("${ai.rag.symbol-weight:1.2}")
+    private Double symbolWeight;
 
     /** Builds and caches one customized assistant per project. */
     public AiCodingAssistant getOrCreateAiAssistantForProject(Long projectId) {
@@ -63,13 +86,17 @@ public class AiServiceFactory {
                         .build());
     }
 
-    private EmbeddingStoreContentRetriever createRetriever(Long projectId) {
-        return EmbeddingStoreContentRetriever.builder()
+    private ContentRetriever createRetriever(Long projectId) {
+        symbolIndexRegistry.ensure(projectId,
+                () -> ragIndexer.load(projectService.getProjectRootPath(projectId)));
+        EmbeddingStoreContentRetriever denseRetriever = EmbeddingStoreContentRetriever.builder()
                 .embeddingStore(embeddingStoreRegistry.get(projectId))
                 .embeddingModel(embeddingModel)
-                .maxResults(maxResults)
+                .maxResults(denseCandidates)
                 .minScore(minScore)
                 .build();
+        return new HybridCodeContentRetriever(projectId, denseRetriever, symbolIndexRegistry,
+                symbolCandidates, maxResults, rrfK, denseWeight, symbolWeight);
     }
 
     /** Evicts stale assistants after an index rebuild or project deletion. */
