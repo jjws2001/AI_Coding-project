@@ -1,7 +1,12 @@
 package com.aicoding.ai.ConcurrentClass;
 
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.model.ModelProvider;
+import dev.langchain4j.model.chat.Capability;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ChatRequestParameters;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import jakarta.annotation.PreDestroy;
@@ -15,6 +20,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -74,8 +80,37 @@ public class ConcurrentChatModel implements StreamingChatModel {
 
     @Override
     public void chat(List<ChatMessage> messages, StreamingChatResponseHandler handler) {
+        enqueue(ChatRequest.builder().messages(List.copyOf(messages)).build(), handler);
+    }
+
+    @Override
+    public void doChat(ChatRequest chatRequest, StreamingChatResponseHandler handler) {
+        enqueue(chatRequest, handler);
+    }
+
+    @Override
+    public ChatRequestParameters defaultRequestParameters() {
+        return delegate.defaultRequestParameters();
+    }
+
+    @Override
+    public List<ChatModelListener> listeners() {
+        return delegate.listeners();
+    }
+
+    @Override
+    public ModelProvider provider() {
+        return delegate.provider();
+    }
+
+    @Override
+    public Set<Capability> supportedCapabilities() {
+        return delegate.supportedCapabilities();
+    }
+
+    private void enqueue(ChatRequest chatRequest, StreamingChatResponseHandler handler) {
         long now = System.currentTimeMillis();
-        PendingRequest request = new PendingRequest(UUID.randomUUID().toString(), List.copyOf(messages), handler,
+        PendingRequest request = new PendingRequest(UUID.randomUUID().toString(), chatRequest, handler,
                 0, now, now);
         if (circuitOpenUntil.get() > now) {
             failPermanently(request, new RejectedExecutionException("LLM circuit breaker is open"));
@@ -133,7 +168,7 @@ public class ConcurrentChatModel implements StreamingChatModel {
         });
 
         try {
-            delegate.chat(request.messages, new StreamingChatResponseHandler() {
+            delegate.chat(request.chatRequest, new StreamingChatResponseHandler() {
                 @Override
                 public void onPartialResponse(String partialResponse) {
                     if (!finished.get()) {
@@ -239,13 +274,13 @@ public class ConcurrentChatModel implements StreamingChatModel {
         dispatcher.shutdownNow();
     }
 
-    private record PendingRequest(String id, List<ChatMessage> messages,
+    private record PendingRequest(String id, ChatRequest chatRequest,
                                   StreamingChatResponseHandler handler, int attempt,
                                   long enqueuedAtMs, long availableAtMs)
             implements Comparable<PendingRequest> {
 
         private PendingRequest retryAt(long availableAtMs) {
-            return new PendingRequest(id, messages, handler, attempt + 1, enqueuedAtMs, availableAtMs);
+            return new PendingRequest(id, chatRequest, handler, attempt + 1, enqueuedAtMs, availableAtMs);
         }
 
         @Override

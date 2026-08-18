@@ -23,11 +23,23 @@ public class AIConfig {
     @Value("${ai.openai.model:gpt-4.1-mini}")
     private String openaiModel;
 
-    @Value("${ai.openai.embedding-model:text-embedding-3-small}")
-    private String embeddingModel;
-
     @Value("${ai.openai.base-url}")
     private String openaiBaseUrl;
+
+    @Value("${ai.openai.embedding-api-key:}")
+    private String embeddingApiKey;
+
+    @Value("${ai.openai.embedding-base-url:}")
+    private String embeddingBaseUrl;
+
+    @Value("${ai.openai.embedding-model:Qwen/Qwen3-VL-Embedding-8B}")
+    private String embeddingModel;
+
+    @Value("${ai.openai.embedding-dimensions:4096}")
+    private Integer embeddingDimensions;
+
+    @Value("${ai.openai.embedding-timeout:0}")
+    private Integer embeddingTimeoutSeconds;
 
     @Value("${ai.openai.temperature:0.2}")
     private Double temperature;
@@ -75,12 +87,21 @@ public class AIConfig {
 
     @Bean
     public EmbeddingModel openAiEmbeddingModel() {
-        log.info("Initializing embedding model {}", embeddingModel);
+        log.info("Initializing embedding model {} with {} dimensions", embeddingModel, embeddingDimensions);
         return OpenAiEmbeddingModel.builder()
-                .apiKey(openaiApiKey)
-                .baseUrl(openaiBaseUrl)
+                .apiKey(firstNonBlank(embeddingApiKey, openaiApiKey))
+                .baseUrl(firstNonBlank(embeddingBaseUrl, openaiBaseUrl))
                 .modelName(embeddingModel)
-                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .dimensions(embeddingDimensions)
+                .timeout(Duration.ofSeconds(positiveOrFallback(embeddingTimeoutSeconds, timeoutSeconds)))
                 .build();
+    }
+
+    private String firstNonBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private int positiveOrFallback(Integer value, Integer fallback) {
+        return value != null && value > 0 ? value : fallback;
     }
 }

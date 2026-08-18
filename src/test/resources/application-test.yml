@@ -29,7 +29,8 @@ ai:
     api-key: test-key
     base-url: http://localhost:9999/v1
     model: test-model
-    embedding-model: text-embedding-3-small
+    embedding-model: Qwen/Qwen3-VL-Embedding-8B
+    embedding-dimensions: 4096
     timeout: 1
   rag:
     store: in-memory

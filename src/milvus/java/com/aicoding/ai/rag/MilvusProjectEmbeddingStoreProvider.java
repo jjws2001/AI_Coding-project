@@ -18,7 +18,7 @@ public class MilvusProjectEmbeddingStoreProvider implements ProjectEmbeddingStor
     @Value("${ai.milvus.port:19530}")
     private Integer port;
 
-    @Value("${ai.milvus.dimension:1536}")
+    @Value("${ai.milvus.dimension:4096}")
     private Integer dimension;
 
     @Override
@@ -31,7 +31,7 @@ public class MilvusProjectEmbeddingStoreProvider implements ProjectEmbeddingStor
         return MilvusEmbeddingStore.builder()
                 .host(host)
                 .port(port)
-                .collectionName("project_" + projectId)
+                .collectionName("project_" + projectId + "_d" + dimension)
                 .dimension(dimension)
                 .indexType(IndexType.HNSW)
                 .metricType(MetricType.COSINE)

@@ -4,6 +4,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -34,7 +35,7 @@ class ConcurrentChatModelTest {
         AtomicInteger calls = new AtomicInteger();
         StreamingChatModel delegate = new StreamingChatModel() {
             @Override
-            public void chat(List<ChatMessage> messages, StreamingChatResponseHandler handler) {
+            public void doChat(ChatRequest chatRequest, StreamingChatResponseHandler handler) {
                 if (calls.incrementAndGet() == 1) {
                     handler.onError(new TimeoutException("temporary timeout"));
                 } else {

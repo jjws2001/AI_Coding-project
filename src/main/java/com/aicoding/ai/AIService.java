@@ -101,10 +101,11 @@ public class AIService {
                         if (completed.compareAndSet(false, true)) {
                             runtimeRegistry.complete(runId, false, "Client cancelled stream");
                         }
-                    });
+                    })
+                    .onErrorResume(error -> Flux.just(streamErrorMessage(error)));
         } catch (RuntimeException e) {
             runtimeRegistry.complete(runId, false, e.getMessage());
-            return Flux.error(e);
+            return Flux.just(streamErrorMessage(e));
         }
     }
 
@@ -151,5 +152,13 @@ public class AIService {
                 || path.endsWith(".js") || path.endsWith(".jsx")
                 || path.endsWith(".py") || path.endsWith(".go")
                 || path.endsWith(".md");
+    }
+
+    private String streamErrorMessage(Throwable error) {
+        String message = error.getMessage();
+        if (message == null || message.isBlank()) {
+            message = error.getClass().getSimpleName();
+        }
+        return guardrailsFilter.filter("AI streaming response failed: " + message);
     }
 }

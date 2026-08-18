@@ -32,10 +32,13 @@ guardrails:
 
 ai:
   openai:
-    api-key: ${OPENAI_API_KEY:}
-    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
-    model: ${OPENAI_MODEL:gpt-4.1-mini}
-    embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    api-key: ${SILICONFLOW_API_KEY:}
+    base-url: ${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
+    model: ${SILICONFLOW_MODEL:deepseek-ai/DeepSeek-V4-Flash}
+    embedding-api-key: ${SILICONFLOW_EMBEDDING_API_KEY:${SILICONFLOW_API_KEY:}}
+    embedding-base-url: ${SILICONFLOW_EMBEDDING_BASE_URL:${SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}}
+    embedding-model: ${SILICONFLOW_EMBEDDING_MODEL:Qwen/Qwen3-VL-Embedding-8B}
+    embedding-dimensions: ${SILICONFLOW_EMBEDDING_DIMENSIONS:4096}
     temperature: 0.2
     max-tokens: 4000
     timeout: 60
@@ -48,7 +51,7 @@ ai:
   milvus:
     host: ${MILVUS_HOST:localhost}
     port: ${MILVUS_PORT:19530}
-    dimension: 1536
+    dimension: ${MILVUS_DIMENSION:${SILICONFLOW_EMBEDDING_DIMENSIONS:4096}}
   context:
     max-messages: 20
     max-tool-result-chars: 6000
